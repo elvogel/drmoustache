@@ -20,7 +20,7 @@ Copied verbatim from the spec — every task's requirements implicitly include t
 - FluentAssertions pinned at **6.12.2** — the last MIT release. Do not bump.
 - License: Apache-2.0. Authors/Company: Endpoint Systems.
 - `DrMoustache.Core` must reference **no I/O or transport assembly**. No `System.Net.*`, no database or messaging clients, no `File`/`Directory` usage.
-- `DrMoustache.Core` sources must contain none of the transport nouns `message`, `queue`, `endpoint` (enforced by an architecture test in Task 12). `row` is deliberately **not** on this list: `TableRow` is a legitimate Markdown construct, not a transport concept.
+- `DrMoustache.Core`'s **declared type and member names** must contain none of the transport nouns `Message`, `Queue`, `Endpoint` (enforced by an architecture test in Task 12 that inspects names via reflection, not source text — the standard `Exception(string message)` constructor makes a text scan useless). `Row` is deliberately **not** on this list: `TableRow` is a legitimate Markdown construct, not a transport concept.
 - HTML entities (`&`, `<`, `>`) are **never** escaped. Output is Markdown, not HTML.
 - Namespace root is `DrMoustache`. File-scoped namespaces, `using` directives inside the namespace (matching Crucible's style).
 

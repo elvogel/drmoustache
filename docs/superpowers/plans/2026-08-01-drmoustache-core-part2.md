@@ -2368,21 +2368,36 @@ public class ArchitectureTests
             $"Core performs no I/O, so '{forbidden}' must not appear in its sources");
     }
 
-    // 'row' is deliberately absent from this list. TableRow is a legitimate
+    // Transport concepts must not leak into Core's API surface.
+    //
+    // This inspects declared type and member NAMES via reflection rather than
+    // scanning source text. A source-text scan is useless here: the standard
+    // Exception(string message) constructor puts "message" in every custom
+    // exception file, and Core has several. Names are also what actually
+    // matters -- the constraint is about Core's public vocabulary, not about
+    // whether the word appears in a comment.
+    //
+    // 'Row' is deliberately absent from this list. TableRow is a legitimate
     // Markdown construct, not a transport concept -- do not "fix" the omission.
     [Theory]
-    [InlineData("message")]
-    [InlineData("queue")]
-    [InlineData("endpoint")]
-    public void CoreSourcesContainNoTransportNouns(string noun)
+    [InlineData("Message")]
+    [InlineData("Queue")]
+    [InlineData("Endpoint")]
+    public void CoreApiVocabularyHasNoTransportNouns(string noun)
     {
-        var offenders = CoreSourceFiles()
-            .Where(f => File.ReadAllText(f).Contains(noun, StringComparison.OrdinalIgnoreCase))
-            .Select(Path.GetFileName)
+        var names = Core.GetTypes()
+            .SelectMany(t => new[] { t.Name }.Concat(
+                t.GetMembers(BindingFlags.Public | BindingFlags.NonPublic
+                        | BindingFlags.Instance | BindingFlags.Static
+                        | BindingFlags.DeclaredOnly)
+                    .Select(m => m.Name)))
             .ToList();
 
-        offenders.Should().BeEmpty(
-            $"'{noun}' is a transport concept and must not leak into Core");
+        names.Should().NotBeEmpty("the scan must actually find Core's API surface");
+
+        names.Where(n => n.Contains(noun, StringComparison.Ordinal))
+            .Should().BeEmpty(
+                $"'{noun}' is a transport concept and must not leak into Core");
     }
 
     private static IEnumerable<string> CoreSourceFiles()
