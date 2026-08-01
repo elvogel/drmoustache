@@ -1,0 +1,132 @@
+namespace DrMoustache.Core.Escaping;
+
+using System.Buffers;
+using System.Text;
+
+/// <summary>Escapes an interpolated value for the Markdown construct
+/// containing it.</summary>
+/// <remarks>HTML entities are never escaped. Output is Markdown; the
+/// downstream renderer handles HTML.</remarks>
+public static class MarkdownEscaper
+{
+    private static readonly SearchValues<char> InlineSpecials =
+        SearchValues.Create("*_[]`|");
+
+    public static string Escape(string value, MarkdownContext context)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.Length == 0) return value;
+
+        return context switch
+        {
+            MarkdownContext.FencedCode or MarkdownContext.CodeSpan => value,
+            MarkdownContext.TableRow => EscapeTableCell(value),
+            MarkdownContext.LineStart => EscapeLineStart(value),
+            MarkdownContext.LinkTarget => EscapeLinkTarget(value),
+            _ => EscapeInline(value),
+        };
+    }
+
+    /// <summary>The backtick run needed to wrap <paramref name="value"/> as a
+    /// code span without the value's own backticks closing it early.</summary>
+    public static string FenceFor(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        var longest = 0;
+        var run = 0;
+
+        foreach (var c in value)
+        {
+            if (c == '`') { run++; longest = Math.Max(longest, run); }
+            else run = 0;
+        }
+
+        return new string('`', longest + 1);
+    }
+
+    private static string EscapeTableCell(string value)
+    {
+        var sb = new StringBuilder(value.Length + 8);
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+
+            switch (c)
+            {
+                case '|':
+                    sb.Append(@"\|");
+                    break;
+                case '\r':
+                    if (i + 1 < value.Length && value[i + 1] == '\n') i++;
+                    sb.Append("<br>");
+                    break;
+                case '\n':
+                    sb.Append("<br>");
+                    break;
+                default:
+                    sb.Append(c);
+                    break;
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static string EscapeLineStart(string value)
+    {
+        // A leading four-space indent would become a code block. Replace the
+        // first space with its numeric entity, which renders as a space but
+        // breaks the indent run.
+        if (value.StartsWith("    ", StringComparison.Ordinal))
+            return "&#32;" + value[1..];
+
+        var first = value[0];
+
+        if (first is '#' or '>' or '-' or '*' or '+')
+            return @"\" + value;
+
+        // An ordered-list marker: digits followed by '.' or ')'.
+        var digits = 0;
+        while (digits < value.Length && char.IsAsciiDigit(value[digits])) digits++;
+
+        if (digits > 0 && digits < value.Length && value[digits] is '.' or ')')
+            return string.Concat(value.AsSpan(0, digits), @"\", value.AsSpan(digits));
+
+        return value;
+    }
+
+    private static string EscapeLinkTarget(string value)
+    {
+        var sb = new StringBuilder(value.Length + 8);
+
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case ' ': sb.Append("%20"); break;
+                case '(': sb.Append("%28"); break;
+                case ')': sb.Append("%29"); break;
+                default: sb.Append(c); break;
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    private static string EscapeInline(string value)
+    {
+        if (value.AsSpan().IndexOfAny(InlineSpecials) < 0) return value;
+
+        var sb = new StringBuilder(value.Length + 8);
+
+        foreach (var c in value)
+        {
+            if (InlineSpecials.Contains(c)) sb.Append('\\');
+            sb.Append(c);
+        }
+
+        return sb.ToString();
+    }
+}
