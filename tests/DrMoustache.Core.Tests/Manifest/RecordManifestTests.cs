@@ -1,5 +1,3 @@
-#pragma warning disable CS8602 // Dereference of a possibly null reference; FluentAssertions assertions guarantee non-null on test pass
-
 namespace DrMoustache.Core.Tests.Manifest;
 
 using DrMoustache.Core.Manifest;
@@ -28,15 +26,15 @@ public class RecordManifestTests
     public void ResolvesTopLevelField()
     {
         Build().TryResolve("orderId", out var f).Should().BeTrue();
-        f.Type.Should().Be(FieldType.String);
-        f.Description.Should().Be("the order number");
+        f!.Type.Should().Be(FieldType.String);
+        f!.Description.Should().Be("the order number");
     }
 
     [Fact]
     public void ResolvesNestedFieldByDottedPath()
     {
         Build().TryResolve("order.total", out var f).Should().BeTrue();
-        f.Type.Should().Be(FieldType.Decimal);
+        f!.Type.Should().Be(FieldType.Decimal);
     }
 
     [Fact]
@@ -61,8 +59,8 @@ public class RecordManifestTests
     public void NullabilityIsRecorded()
     {
         Build().TryResolve("promoCode", out var f).Should().BeTrue();
-        f.IsNullable.Should().BeTrue();
+        f!.IsNullable.Should().BeTrue();
         Build().TryResolve("orderId", out var g).Should().BeTrue();
-        g.IsNullable.Should().BeFalse();
+        g!.IsNullable.Should().BeFalse();
     }
 }
