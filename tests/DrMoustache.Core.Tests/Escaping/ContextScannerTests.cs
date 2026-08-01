@@ -123,4 +123,8 @@ public class ContextScannerTests
     [Fact]
     public void UnterminatedCodeSpanDoesNotLeakAcrossAFence()
         => At("`a\n```\ncode\n```\n@b").Should().NotBe(MarkdownContext.CodeSpan);
+
+    [Fact]
+    public void UnterminatedCodeSpanDoesNotLeakOntoAFollowingTableRow()
+        => At("`a\n| @h1 | h2 |").Should().Be(MarkdownContext.TableRow);
 }

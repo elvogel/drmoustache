@@ -21,10 +21,9 @@ public static class ContextScanner
 
         // Code-span state is hoisted here (rather than being local to
         // ScanTextLine) because CommonMark allows a code span to cross a
-        // line break: `ab\ncd` is one span. It is explicitly reset below
-        // whenever the current paragraph is interrupted — by a blank line or
-        // by a fenced code block opening — since either one ends the
-        // paragraph and an unterminated span must not leak past it.
+        // line break: `ab\ncd` is one span. It is reset by InterruptsParagraph
+        // below whenever the line about to be scanned interrupts the
+        // paragraph the span started in.
         var codeSpanTicks = 0;
 
         while (i < template.Length)
@@ -50,10 +49,8 @@ public static class ContextScanner
             }
             else if (TryReadFenceOpen(line, out var openChar, out var openLength))
             {
-                // A fenced code block interrupts a paragraph exactly as a
-                // blank line does, so a code span cannot cross into one:
-                // reset the same way the blank-line branch below does.
-                codeSpanTicks = 0;
+                if (InterruptsParagraph(entersFence: true, isBlank: false, isTableRow: false))
+                    codeSpanTicks = 0;
 
                 Fill(result, i, lineEnd, MarkdownContext.FencedCode);
                 fenceChar = openChar;
@@ -62,9 +59,12 @@ public static class ContextScanner
             }
             else
             {
-                if (IsBlankLine(line)) codeSpanTicks = 0;
+                var isTableRow = LooksLikeTableRow(template, i, lineEnd);
 
-                var isTableRow = ScanTextLine(template, i, lineEnd, result, ref codeSpanTicks);
+                if (InterruptsParagraph(entersFence: false, isBlank: IsBlankLine(line), isTableRow))
+                    codeSpanTicks = 0;
+
+                ScanTextLine(template, i, lineEnd, result, ref codeSpanTicks, isTableRow);
                 lineBreakContext = isTableRow ? MarkdownContext.TableRow : MarkdownContext.Inline;
             }
 
@@ -76,6 +76,21 @@ public static class ContextScanner
         return result;
     }
 
+    /// <summary>A code span cannot cross a construct that interrupts the
+    /// paragraph containing it. Blank line, fence open, and table row are the
+    /// three such constructs this scanner distinguishes as their own
+    /// context — a leaked <see cref="MarkdownContext.CodeSpan"/> only causes
+    /// damage where it overwrites a context the scanner would otherwise
+    /// assign correctly, which is exactly <see cref="MarkdownContext.FencedCode"/>
+    /// and <see cref="MarkdownContext.TableRow"/>. Headings, blockquotes, and
+    /// list items also interrupt a paragraph in CommonMark, but this scanner
+    /// gives them no context of their own — a leak onto one of those lines
+    /// still lands on LineStart/Inline, the bounded one-paragraph damage the
+    /// blank-line case already accepts, so they are deliberately excluded
+    /// here.</summary>
+    private static bool InterruptsParagraph(bool entersFence, bool isBlank, bool isTableRow)
+        => entersFence || isBlank || isTableRow;
+
     private static bool IsBlankLine(ReadOnlySpan<char> line)
     {
         foreach (var c in line)
@@ -83,10 +98,10 @@ public static class ContextScanner
         return true;
     }
 
-    private static bool ScanTextLine(
-        string template, int start, int end, MarkdownContext[] result, ref int codeSpanTicks)
+    private static void ScanTextLine(
+        string template, int start, int end, MarkdownContext[] result,
+        ref int codeSpanTicks, bool isTableRow)
     {
-        var isTableRow = LooksLikeTableRow(template, start, end);
         var baseContext = isTableRow ? MarkdownContext.TableRow : MarkdownContext.Inline;
 
         var i = start;
@@ -152,8 +167,6 @@ public static class ContextScanner
 
             i++;
         }
-
-        return isTableRow;
     }
 
     /// <summary>A line is a table row when its first meaningful character is a
