@@ -86,4 +86,59 @@ public class ValueResolverTests
     [Fact]
     public void StringsAreNotSequences()
         => ValueResolver.AsSequence("abc").Should().BeNull();
+
+    [Fact]
+    public void PrefersExactCaseMatchWhenBothCasesExist()
+    {
+        // A type with two properties differing only in case
+        var obj = new AmbiguousCase { Total = 100, total = 200 };
+        ValueResolver.TryResolve(obj, "Total", out var v).Should().BeTrue();
+        v.Should().Be(100);
+    }
+
+    [Fact]
+    public void ReturnsFalseWhenOnlyCaseAmbiguityExistsNoExactMatch()
+    {
+        // A type with two properties differing only in case, query with different case
+        var obj = new AmbiguousCase { Total = 100, total = 200 };
+        ValueResolver.TryResolve(obj, "TOTAL", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void DisposesEnumeratorAfterTruthiness()
+    {
+        var enumerable = new TrackingEnumerable();
+        ValueResolver.IsTruthy(enumerable);
+        enumerable.EnumeratorWasDisposed.Should().BeTrue();
+    }
+
+    // Helper type with properties differing only in case
+    private sealed class AmbiguousCase
+    {
+        public int Total { get; set; }
+        public int total { get; set; }
+    }
+
+    // Helper enumerable that tracks disposal
+    private sealed class TrackingEnumerable : System.Collections.IEnumerable
+    {
+        public bool EnumeratorWasDisposed { get; private set; }
+
+        public System.Collections.IEnumerator GetEnumerator() => new TrackingEnumerator(this);
+
+        private sealed class TrackingEnumerator : System.Collections.IEnumerator, IDisposable
+        {
+            private readonly TrackingEnumerable _parent;
+
+            public TrackingEnumerator(TrackingEnumerable parent) => _parent = parent;
+
+            public object? Current => "value";
+
+            public bool MoveNext() => false;
+
+            public void Reset() { }
+
+            public void Dispose() => _parent.EnumeratorWasDisposed = true;
+        }
+    }
 }
