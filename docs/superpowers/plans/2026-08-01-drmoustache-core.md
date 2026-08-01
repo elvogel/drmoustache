@@ -1454,7 +1454,7 @@ The rules table from the spec, verbatim:
 |---|---|---|
 | `FencedCode` | nothing | everything |
 | `CodeSpan` | nothing; widen the fence | everything |
-| `TableRow` | pipe → backslash-escaped pipe; newline → `<br>` | `#`, `*`, `_` |
+| `TableRow` | everything `Inline` escapes, plus newline → `<br>` | `#`, `>`, `-` |
 | `LineStart` | leading `#` `>` `-` `*` `+`, `1.`, four-space indent | after column 0 |
 | `LinkTarget` | percent-encode space, `(`, `)` | — |
 | `Inline` | `*` `_` `[` `]` `` ` `` `\|` | `#` `-` `>` |
@@ -1490,10 +1490,14 @@ public class MarkdownEscaperTests
         => MarkdownEscaper.Escape(value, MarkdownContext.TableRow)
             .Should().Be("a<br>b");
 
+    // Markdown trumps Mustache: interpolated data must not change the document's
+    // formatting, so emphasis characters are escaped in a cell. Block markers
+    // like '#' stay literal because a table cell is inline context — a leading
+    // '#' there cannot become a heading.
     [Fact]
-    public void TableRowLeavesHashesAndEmphasisAlone()
+    public void TableRowEscapesEmphasisButNotBlockMarkers()
         => MarkdownEscaper.Escape("#1 *top*", MarkdownContext.TableRow)
-            .Should().Be("#1 *top*");
+            .Should().Be(@"#1 \*top\*");
 
     [Theory]
     [InlineData("#1 pick", @"\#1 pick")]

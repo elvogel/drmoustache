@@ -308,7 +308,7 @@ after the section expands.
 |---|---|---|
 | `FencedCode` | nothing | everything |
 | `CodeSpan` | nothing; widen the fence if the value contains a backtick run | everything |
-| `TableRow` | pipe → backslash-escaped pipe; newline → `<br>` | `#`, `*`, `_` |
+| `TableRow` | everything `Inline` escapes, plus newline → `<br>` | `#`, `>`, `-` |
 | `LineStart` | leading `#` `>` `-` `*` `+`, `1.`, four-space indent | everything after column 0 |
 | `LinkTarget` | percent-encode space, `(`, `)` | — |
 | `Inline` | `*` `_` `[` `]` `` ` `` `\|` | `#` `-` `>` |
@@ -321,6 +321,16 @@ verbatim.
 is preferable to one whose correctness depends on table detection having succeeded.
 The cost is nil: `|` is ASCII punctuation, so CommonMark renders `\|` as a plain `|`
 with no visible backslash.
+
+**Markdown trumps Mustache.** A table cell escapes emphasis and link characters as
+well as pipes, so a value of `*Special*` renders as literal `*Special*` rather than
+becoming italic. Interpolated data must never change the document's Markdown
+structure — that would be Mustache content overriding the template author's intent.
+An author who wants formatting to come from data uses `{{{raw}}}`.
+
+This is also what makes the round-trip property in *Testing* achievable: a cell that
+leaves `*` live cannot return a value containing `*` unchanged, because the parser
+consumes it as emphasis.
 
 **Autolinks are left alone.** A value that looks like a URL becomes a link, which is
 usually what is wanted.
