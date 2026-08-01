@@ -1822,7 +1822,7 @@ EOF
 
 ---
 
-**Tasks 7–12 follow in a second file** to keep each document reviewable:
+**Tasks 7–12 are in [`2026-08-01-drmoustache-core-part2.md`](2026-08-01-drmoustache-core-part2.md)**, split to keep each document reviewable:
 
 - **Task 7:** Template lexer — nodes (`TextNode`, `InterpolationNode`, `SectionNode`, `RawNode`, `HelperNode`), tag parsing, and the Markdown-aware standalone-tag rule.
 - **Task 8:** Frontmatter parsing — the reserved `drmoustache` block, `RenderConfig`, and the leading-`{{` YAML error rewrite.
