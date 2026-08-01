@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <Description>Markdown-aware Mustache rendering engine.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" />
+    <ProjectReference Include="../DrMoustache.Abstractions/DrMoustache.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

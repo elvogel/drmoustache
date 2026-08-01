@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DrMoustache.Abstractions/DrMoustache.Abstractions.csproj" />
+    <Project Path="src/DrMoustache.Core/DrMoustache.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DrMoustache.Core.Tests/DrMoustache.Core.Tests.csproj" />
+  </Folder>
+</Solution>
