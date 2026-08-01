@@ -37,6 +37,27 @@ public class ManifestBuilderTests
     }
 
     private sealed record Unannotated;
+
+    [DrMoustacheRecord("node")]
+    private sealed record Node
+    {
+        [Field] public required string Id { get; init; }
+        [Field] public Node? Child { get; init; }
+    }
+
+    [DrMoustacheRecord("node-collection")]
+    private sealed record NodeWithCollection
+    {
+        [Field] public required string Id { get; init; }
+        [Field] public IReadOnlyList<NodeWithCollection> Children { get; init; } = [];
+    }
+
+    [DrMoustacheRecord("with-nullable-int")]
+    private sealed record WithNullableInt
+    {
+        [Field] public required string Id { get; init; }
+        [Field] public int? RetryCount { get; init; }
+    }
 #pragma warning restore CA1812
 
     [Fact]
@@ -96,5 +117,30 @@ public class ManifestBuilderTests
         var act = () => ManifestBuilder.FromType<Unannotated>();
         act.Should().Throw<ManifestException>()
             .WithMessage("*[DrMoustacheRecord]*");
+    }
+
+    [Fact]
+    public void ThrowsOnSelfReferencingRecordViaObjectProperty()
+    {
+        var act = () => ManifestBuilder.FromType<Node>();
+        act.Should().Throw<ManifestException>()
+            .WithMessage("*nests deeper than*");
+    }
+
+    [Fact]
+    public void ThrowsOnCyclicRecordViaCollectionProperty()
+    {
+        var act = () => ManifestBuilder.FromType<NodeWithCollection>();
+        act.Should().Throw<ManifestException>()
+            .WithMessage("*nests deeper than*");
+    }
+
+    [Fact]
+    public void ClassifiesNullableValueTypeAsIntegerAndNullable()
+    {
+        var m = ManifestBuilder.FromType<WithNullableInt>();
+        m.TryResolve("retryCount", out var field).Should().BeTrue();
+        field!.Type.Should().Be(FieldType.Integer);
+        field.IsNullable.Should().BeTrue();
     }
 }
