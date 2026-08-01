@@ -45,34 +45,15 @@ public static class MarkdownEscaper
         return new string('`', longest + 1);
     }
 
-    private static string EscapeTableCell(string value)
-    {
-        var sb = new StringBuilder(value.Length + 8);
-
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-
-            switch (c)
-            {
-                case '|':
-                    sb.Append(@"\|");
-                    break;
-                case '\r':
-                    if (i + 1 < value.Length && value[i + 1] == '\n') i++;
-                    sb.Append("<br>");
-                    break;
-                case '\n':
-                    sb.Append("<br>");
-                    break;
-                default:
-                    sb.Append(c);
-                    break;
-            }
-        }
-
-        return sb.ToString();
-    }
+    /// <summary>A table cell is inline context plus newline handling: markdown
+    /// trumps Mustache, so interpolated data must not be able to introduce
+    /// emphasis, links, or code spans any more than it can outside a table --
+    /// hence this shares <see cref="EscapeInlineSpecials"/>'s escaping loop
+    /// rather than leaving <c>*</c>/<c>_</c> alone. Block markers (<c>#</c>,
+    /// <c>&gt;</c>, <c>-</c>) still pass through: a table cell is inline
+    /// context, so a leading '#' there cannot become a heading.</summary>
+    private static string EscapeTableCell(string value) =>
+        EscapeInlineSpecials(value, convertNewlinesToBreaks: true);
 
     private static string EscapeLineStart(string value)
     {
@@ -115,14 +96,32 @@ public static class MarkdownEscaper
         return sb.ToString();
     }
 
-    private static string EscapeInline(string value)
+    private static string EscapeInline(string value) =>
+        EscapeInlineSpecials(value, convertNewlinesToBreaks: false);
+
+    /// <summary>Backslash-escapes the inline specials shared by
+    /// <see cref="EscapeInline"/> and <see cref="EscapeTableCell"/>.
+    /// <paramref name="convertNewlinesToBreaks"/> additionally turns
+    /// <c>\r\n</c>/<c>\n</c> into <c>&lt;br&gt;</c>, which only applies inside
+    /// a table cell -- a newline elsewhere is left as an ordinary line
+    /// break.</summary>
+    private static string EscapeInlineSpecials(string value, bool convertNewlinesToBreaks)
     {
-        if (value.AsSpan().IndexOfAny(InlineSpecials) < 0) return value;
+        if (!convertNewlinesToBreaks && value.AsSpan().IndexOfAny(InlineSpecials) < 0) return value;
 
         var sb = new StringBuilder(value.Length + 8);
 
-        foreach (var c in value)
+        for (var i = 0; i < value.Length; i++)
         {
+            var c = value[i];
+
+            if (convertNewlinesToBreaks && c is '\r' or '\n')
+            {
+                if (c == '\r' && i + 1 < value.Length && value[i + 1] == '\n') i++;
+                sb.Append("<br>");
+                continue;
+            }
+
             if (InlineSpecials.Contains(c)) sb.Append('\\');
             sb.Append(c);
         }
