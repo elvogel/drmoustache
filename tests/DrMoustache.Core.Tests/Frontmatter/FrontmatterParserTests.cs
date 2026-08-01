@@ -159,4 +159,77 @@ public class FrontmatterParserTests
             """);
         act.Should().Throw<TemplateException>().WithMessage("*sideways*fanout*collate*");
     }
+
+    [Fact]
+    public void LeadingDoubleBraceInsideTheReservedBlockGivesAnActionableError()
+    {
+        var act = () => FrontmatterParser.Parse("""
+            ---
+            drmoustache:
+              source: dlq
+              delivery: fanout
+              output: {{sequenceNumber}}.md
+              onCollision: suffix
+            ---
+            body
+            """);
+
+        act.Should().Throw<TemplateException>()
+            .WithMessage("*must be quoted*")
+            .Which.Message.Should()
+                .Contain("flow mapping")
+                .And.Contain("output: \"{{sequenceNumber}}.md\"")
+                .And.NotContain("could not read");
+    }
+
+    [Fact]
+    public void MustacheMidValueInsideTheReservedBlockNeedsNoQuotes()
+    {
+        var t = FrontmatterParser.Parse("""
+            ---
+            drmoustache:
+              source: dlq
+              delivery: collate
+              output: dlq/{{sequenceNumber}}.md
+            ---
+            body
+            """);
+        t.Config.Output.Should().Be("dlq/{{sequenceNumber}}.md");
+    }
+
+    [Fact]
+    public void UnknownDeliveryModeErrorReportsItsOwnLine()
+    {
+        var act = () => FrontmatterParser.Parse("""
+            ---
+            drmoustache:
+              source: x
+              delivery: sideways
+              output: o.md
+            ---
+            body
+            """);
+
+        // line 1: ---, line 2: drmoustache:, line 3: source, line 4: delivery
+        act.Should().Throw<TemplateException>().Which.Line.Should().Be(4);
+    }
+
+    [Fact]
+    public void FanoutWithoutCollisionPolicyErrorReportsTheReservedBlockHeaderLine()
+    {
+        var act = () => FrontmatterParser.Parse("""
+            ---
+            title: x
+            drmoustache:
+              source: dlq
+              delivery: fanout
+              output: o.md
+            ---
+            body
+            """);
+
+        // line 1: ---, line 2: title, line 3: drmoustache: (the header, since
+        // onCollision is absent there is no key line to point at instead)
+        act.Should().Throw<TemplateException>().Which.Line.Should().Be(3);
+    }
 }
