@@ -99,4 +99,24 @@ public class ContextScannerTests
     [Fact]
     public void EmptyTemplateReturnsEmptyArray()
         => ContextScanner.Scan("").Should().BeEmpty();
+
+    [Fact]
+    public void CodeSpanSurvivesLineBreak()
+        => At("`ab\nc@d`").Should().Be(MarkdownContext.CodeSpan);
+
+    [Fact]
+    public void BlankLineResetsCodeSpanState()
+        => At("`a\n\n@b").Should().NotBe(MarkdownContext.CodeSpan);
+
+    [Fact]
+    public void UnterminatedCodeSpanDoesNotLeakPastItsParagraph()
+        => At("`a\n\n@b").Should().Be(MarkdownContext.LineStart);
+
+    [Fact]
+    public void NewlineInsideFencedBlockIsFencedCode()
+        => At("```\ncode@\nmore\n```").Should().Be(MarkdownContext.FencedCode);
+
+    [Fact]
+    public void NewlineTerminatingTableRowIsTableRow()
+        => At("| a | b |@\nnext line").Should().Be(MarkdownContext.TableRow);
 }

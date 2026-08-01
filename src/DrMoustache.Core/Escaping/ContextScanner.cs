@@ -19,10 +19,18 @@ public static class ContextScanner
         var fenceChar = '\0';
         var fenceLength = 0;
 
+        // Code-span state is hoisted here (rather than being local to
+        // ScanTextLine) because CommonMark allows a code span to cross a
+        // line break: `ab\ncd` is one span. It is explicitly reset below
+        // whenever a blank line is encountered, since a blank line ends the
+        // paragraph and an unterminated span must not leak past it.
+        var codeSpanTicks = 0;
+
         while (i < template.Length)
         {
             var lineEnd = FindLineEnd(template, i);
             var line = template.AsSpan(i, lineEnd - i);
+            MarkdownContext lineBreakContext;
 
             if (fenceLength > 0)
             {
@@ -36,32 +44,52 @@ public static class ContextScanner
                 {
                     Fill(result, i, lineEnd, MarkdownContext.FencedCode);
                 }
+
+                lineBreakContext = MarkdownContext.FencedCode;
             }
             else if (TryReadFenceOpen(line, out var openChar, out var openLength))
             {
                 Fill(result, i, lineEnd, MarkdownContext.FencedCode);
                 fenceChar = openChar;
                 fenceLength = openLength;
+                lineBreakContext = MarkdownContext.FencedCode;
             }
             else
             {
-                ScanTextLine(template, i, lineEnd, result);
+                if (IsBlankLine(line)) codeSpanTicks = 0;
+
+                var isTableRow = ScanTextLine(template, i, lineEnd, result, ref codeSpanTicks);
+                lineBreakContext = isTableRow ? MarkdownContext.TableRow : MarkdownContext.Inline;
             }
 
+            var lineBreakStart = lineEnd;
             i = SkipLineBreak(template, lineEnd);
+            Fill(result, lineBreakStart, i, lineBreakContext);
         }
 
         return result;
     }
 
-    private static void ScanTextLine(
-        string template, int start, int end, MarkdownContext[] result)
+    private static bool IsBlankLine(ReadOnlySpan<char> line)
+    {
+        foreach (var c in line)
+            if (!char.IsWhiteSpace(c)) return false;
+        return true;
+    }
+
+    private static bool ScanTextLine(
+        string template, int start, int end, MarkdownContext[] result, ref int codeSpanTicks)
     {
         var isTableRow = LooksLikeTableRow(template, start, end);
         var baseContext = isTableRow ? MarkdownContext.TableRow : MarkdownContext.Inline;
 
         var i = start;
-        var codeSpanTicks = 0;
+
+        // inLinkTarget is intentionally NOT hoisted across lines like
+        // codeSpanTicks is: a link destination spanning a line break is
+        // vanishingly rare, and resetting it per line keeps an unterminated
+        // destination from leaking into the rest of the document. This is a
+        // deliberate choice, not an oversight.
         var inLinkTarget = false;
 
         while (i < end)
@@ -118,6 +146,8 @@ public static class ContextScanner
 
             i++;
         }
+
+        return isTableRow;
     }
 
     /// <summary>A line is a table row when its first meaningful character is a
