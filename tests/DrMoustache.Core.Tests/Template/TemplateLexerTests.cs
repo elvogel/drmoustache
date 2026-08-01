@@ -81,6 +81,14 @@ public class TemplateLexerTests
     }
 
     [Fact]
+    public void IndentedStandaloneSectionTagLeavesNoStrayWhitespaceTextNode()
+    {
+        var nodes = TemplateLexer.Lex("before\n  {{#items}}\nx\n  {{/items}}\nafter");
+        var flat = string.Concat(nodes.OfType<TextNode>().Select(n => n.Text));
+        flat.Should().Be("before\nafter");
+    }
+
+    [Fact]
     public void SectionTagOnATableRowDoesNotConsumeTheLine()
     {
         var nodes = TemplateLexer.Lex("{{#items}}| {{name}} |\n{{/items}}");
@@ -109,6 +117,13 @@ public class TemplateLexerTests
     {
         var act = () => TemplateLexer.Lex("a {{name");
         act.Should().Throw<TemplateException>().WithMessage("*unterminated*");
+    }
+
+    [Fact]
+    public void UnterminatedQuotedArgumentIsAnError()
+    {
+        var act = () => TemplateLexer.Lex("""{{date placedAt "oops}}""");
+        act.Should().Throw<TemplateException>().WithMessage("*unterminated*quoted*");
     }
 
     [Fact]

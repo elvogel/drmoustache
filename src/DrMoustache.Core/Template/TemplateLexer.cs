@@ -69,8 +69,10 @@ public static class TemplateLexer
 
             if (content.StartsWith('!'))
             {
+                // ConsumeStandaloneLine trims already-buffered leading whitespace
+                // off `text` before we flush, so it must run first.
+                index = ConsumeStandaloneLine(body, open, afterTag, text);
                 FlushText();
-                index = ConsumeStandaloneLine(body, contexts, open, afterTag, text);
                 continue;
             }
 
@@ -79,8 +81,7 @@ public static class TemplateLexer
                 var inverted = content[0] == '^';
                 var path = content[1..].Trim();
 
-                FlushText();
-                var next = ConsumeStandaloneLine(body, contexts, open, afterTag, text);
+                var next = ConsumeStandaloneLine(body, open, afterTag, text);
                 FlushText();
 
                 var children = ReadNodes(body, contexts, ref next, path, line);
@@ -102,8 +103,7 @@ public static class TemplateLexer
                         $"mismatched closing tag at line {line}: "
                         + $"expected '{{{{/{openSection}}}}}', found '{{{{/{path}}}}}'", line);
 
-                FlushText();
-                index = ConsumeStandaloneLine(body, contexts, open, afterTag, text);
+                index = ConsumeStandaloneLine(body, open, afterTag, text);
                 FlushText();
                 return nodes;
             }
@@ -120,7 +120,7 @@ public static class TemplateLexer
             {
                 var helper = content[..space];
                 var rest = content[(space + 1)..].Trim();
-                var (path, argument) = SplitHelperArguments(rest);
+                var (path, argument) = SplitHelperArguments(helper, rest, line);
                 nodes.Add(new HelperNode(helper, path, argument, context, line));
             }
 
@@ -140,10 +140,14 @@ public static class TemplateLexer
     /// consumes the whole line — but never inside a table row, where the
     /// trailing newline terminates the row.</summary>
     private static int ConsumeStandaloneLine(
-        string body, MarkdownContext[] contexts, int tagStart, int afterTag,
-        StringBuilder pendingText)
+        string body, int tagStart, int afterTag, StringBuilder pendingText)
     {
-        if (contexts[tagStart] == MarkdownContext.TableRow) return afterTag;
+        // No explicit TableRow check is needed here: a line the scanner
+        // classifies as TableRow always contains a literal '|' outside the
+        // leading whitespace-and-section-tag run (that's what makes it a
+        // table row), and that '|' always falls in either the before-tag or
+        // after-tag span below. Either whitespace scan therefore already
+        // fails on a table row, so it can never look standalone.
 
         // Everything before the tag on this line must be whitespace.
         var lineStart = body.LastIndexOf('\n', Math.Max(tagStart - 1, 0)) + 1;
@@ -166,13 +170,17 @@ public static class TemplateLexer
         return i2 < body.Length ? i2 + 1 : body.Length;
     }
 
-    private static (string Path, string? Argument) SplitHelperArguments(string rest)
+    private static (string Path, string? Argument) SplitHelperArguments(
+        string helper, string rest, int line)
     {
         var quote = rest.IndexOf('"', StringComparison.Ordinal);
         if (quote < 0) return (rest.Trim(), null);
 
         var closing = rest.IndexOf('"', quote + 1);
-        if (closing < 0) return (rest.Trim(), null);
+        if (closing < 0)
+            throw new TemplateException(
+                $"unterminated quoted argument in tag '{{{{{helper} {rest}}}}}' "
+                + $"at line {line}", line);
 
         return (rest[..quote].Trim(), rest[(quote + 1)..closing]);
     }
