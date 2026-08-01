@@ -10,8 +10,10 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Markdig" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/DrMoustache.Core/DrMoustache.Core.csproj" />
+    <ProjectReference Include="../../src/DrMoustache.Abstractions/DrMoustache.Abstractions.csproj" />
   </ItemGroup>
 </Project>
