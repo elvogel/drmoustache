@@ -119,4 +119,8 @@ public class ContextScannerTests
     [Fact]
     public void NewlineTerminatingTableRowIsTableRow()
         => At("| a | b |@\nnext line").Should().Be(MarkdownContext.TableRow);
+
+    [Fact]
+    public void UnterminatedCodeSpanDoesNotLeakAcrossAFence()
+        => At("`a\n```\ncode\n```\n@b").Should().NotBe(MarkdownContext.CodeSpan);
 }

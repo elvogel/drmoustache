@@ -22,7 +22,8 @@ public static class ContextScanner
         // Code-span state is hoisted here (rather than being local to
         // ScanTextLine) because CommonMark allows a code span to cross a
         // line break: `ab\ncd` is one span. It is explicitly reset below
-        // whenever a blank line is encountered, since a blank line ends the
+        // whenever the current paragraph is interrupted — by a blank line or
+        // by a fenced code block opening — since either one ends the
         // paragraph and an unterminated span must not leak past it.
         var codeSpanTicks = 0;
 
@@ -49,6 +50,11 @@ public static class ContextScanner
             }
             else if (TryReadFenceOpen(line, out var openChar, out var openLength))
             {
+                // A fenced code block interrupts a paragraph exactly as a
+                // blank line does, so a code span cannot cross into one:
+                // reset the same way the blank-line branch below does.
+                codeSpanTicks = 0;
+
                 Fill(result, i, lineEnd, MarkdownContext.FencedCode);
                 fenceChar = openChar;
                 fenceLength = openLength;
