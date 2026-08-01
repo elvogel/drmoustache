@@ -20,7 +20,7 @@ Copied verbatim from the spec — every task's requirements implicitly include t
 - FluentAssertions pinned at **6.12.2** — the last MIT release. Do not bump.
 - License: Apache-2.0. Authors/Company: Endpoint Systems.
 - `DrMoustache.Core` must reference **no I/O or transport assembly**. No `System.Net.*`, no database or messaging clients, no `File`/`Directory` usage.
-- `DrMoustache.Core` sources must contain none of the transport nouns `message`, `queue`, `row`, `endpoint` (enforced by an architecture test in Task 12).
+- `DrMoustache.Core` sources must contain none of the transport nouns `message`, `queue`, `endpoint` (enforced by an architecture test in Task 12). `row` is deliberately **not** on this list: `TableRow` is a legitimate Markdown construct, not a transport concept.
 - HTML entities (`&`, `<`, `>`) are **never** escaped. Output is Markdown, not HTML.
 - Namespace root is `DrMoustache`. File-scoped namespaces, `using` directives inside the namespace (matching Crucible's style).
 
@@ -172,39 +172,45 @@ Note: `xunit.v3` test projects are executables (`OutputType`/`Exe`), unlike xuni
 
 - [ ] **Step 5: Add the Apache-2.0 `LICENSE`**
 
-Run: `curl -sL https://www.apache.org/licenses/LICENSE-2.0.txt -o LICENSE`
+Copy the existing Apache-2.0 text from a sibling repository rather than fetching it over the network, which may be unavailable:
 
-Then append the copyright line required by the Apache appendix — replace the bracketed placeholders in the boilerplate at the end of the file with `2026` and `Endpoint Systems`.
+Run: `cp /raid/elvogel/repos/phoenixmldb/crucible/LICENSE ./LICENSE`
+
+If that path does not exist, write the standard Apache License 2.0 text from your own knowledge. Either way, verify the result:
+
+Run: `head -3 LICENSE && wc -l LICENSE`
+Expected: begins with `Apache License`, roughly 200 lines.
 
 - [ ] **Step 6: Write a scaffolding test**
+
+`tests/DrMoustache.Core.Tests/ScaffoldingTests.cs`:
+
+Task 1's deliverable is the shared build configuration, so the test asserts that
+`Directory.Build.props` actually applied. This is a real invariant — it fails if the
+props file is missing, misnamed, or sets the wrong framework.
 
 `tests/DrMoustache.Core.Tests/ScaffoldingTests.cs`:
 
 ```csharp
 namespace DrMoustache.Core.Tests;
 
+using System.Reflection;
+using System.Runtime.Versioning;
 using FluentAssertions;
 using Xunit;
 
 public class ScaffoldingTests
 {
     [Fact]
-    public void CoreAssemblyIsReferenceable()
-    {
-        var asm = typeof(DrMoustache.Abstractions.IDataProvider).Assembly;
-        asm.GetName().Name.Should().Be("DrMoustache.Abstractions");
-    }
+    public void SharedBuildPropertiesApplyNet10()
+        => Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<TargetFrameworkAttribute>()!
+            .FrameworkName.Should().Be(".NETCoreApp,Version=v10.0");
 }
 ```
 
-This will not compile until Task 2 defines `IDataProvider`. That is intentional — it is the failing test for Task 2. For this task, temporarily assert on a type that exists:
-
-```csharp
-    [Fact]
-    public void SolutionBuilds() => true.Should().BeTrue();
-```
-
-Write `SolutionBuilds` now; Task 2 replaces it with `CoreAssemblyIsReferenceable`.
+Do **not** write a tautological placeholder such as `true.Should().BeTrue()`. Task 2
+adds a second test here asserting the Abstractions assembly is referenceable.
 
 - [ ] **Step 7: Verify the build and test run**
 
@@ -450,9 +456,10 @@ public abstract class DataProvider<TRecord> : IDataProvider
 }
 ```
 
-- [ ] **Step 6: Replace the placeholder scaffolding test**
+- [ ] **Step 6: Add a second scaffolding test**
 
-In `tests/DrMoustache.Core.Tests/ScaffoldingTests.cs`, replace `SolutionBuilds` with:
+In `tests/DrMoustache.Core.Tests/ScaffoldingTests.cs`, alongside the existing
+`SharedBuildPropertiesApplyNet10`, add:
 
 ```csharp
     [Fact]
@@ -466,7 +473,7 @@ In `tests/DrMoustache.Core.Tests/ScaffoldingTests.cs`, replace `SolutionBuilds` 
 - [ ] **Step 7: Run the tests to verify they pass**
 
 Run: `dotnet test DrMoustache.slnx`
-Expected: 5 tests passed.
+Expected: 6 tests passed (4 contract, 2 scaffolding).
 
 - [ ] **Step 8: Commit**
 

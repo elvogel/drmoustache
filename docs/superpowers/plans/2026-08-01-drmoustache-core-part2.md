@@ -2353,38 +2353,50 @@ public class ArchitectureTests
         => Core.GetReferencedAssemblies().Select(a => a.Name)
             .Should().NotContain(forbidden);
 
-    [Fact]
-    public void CoreDoesNotTouchTheFilesystem()
+    [Theory]
+    [InlineData("System.IO")]
+    [InlineData("File.")]
+    [InlineData("Directory.")]
+    public void CoreSourcesDoNotTouchTheFilesystem(string forbidden)
     {
-        var types = Core.GetTypes()
-            .SelectMany(t => t.GetMethods(
-                BindingFlags.Public | BindingFlags.NonPublic
-                | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-            .Select(m => m.DeclaringType?.Namespace)
-            .Distinct();
+        var offenders = CoreSourceFiles()
+            .Where(f => File.ReadAllText(f).Contains(forbidden, StringComparison.Ordinal))
+            .Select(Path.GetFileName)
+            .ToList();
 
-        types.Should().NotContain(n => n != null && n.StartsWith("System.IO", StringComparison.Ordinal));
+        offenders.Should().BeEmpty(
+            $"Core performs no I/O, so '{forbidden}' must not appear in its sources");
     }
 
+    // 'row' is deliberately absent from this list. TableRow is a legitimate
+    // Markdown construct, not a transport concept -- do not "fix" the omission.
     [Theory]
     [InlineData("message")]
     [InlineData("queue")]
     [InlineData("endpoint")]
     public void CoreSourcesContainNoTransportNouns(string noun)
     {
-        var root = FindSourceRoot();
-        var offenders = Directory
-            .EnumerateFiles(Path.Combine(root, "src", "DrMoustache.Core"), "*.cs",
-                SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
-                StringComparison.Ordinal))
-            .Where(f => File.ReadAllText(f)
-                .Contains(noun, StringComparison.OrdinalIgnoreCase))
-            .Select(f => Path.GetFileName(f))
+        var offenders = CoreSourceFiles()
+            .Where(f => File.ReadAllText(f).Contains(noun, StringComparison.OrdinalIgnoreCase))
+            .Select(Path.GetFileName)
             .ToList();
 
         offenders.Should().BeEmpty(
             $"'{noun}' is a transport concept and must not leak into Core");
+    }
+
+    private static IEnumerable<string> CoreSourceFiles()
+    {
+        var files = Directory
+            .EnumerateFiles(Path.Combine(FindSourceRoot(), "src", "DrMoustache.Core"),
+                "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(
+                $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                StringComparison.Ordinal))
+            .ToList();
+
+        files.Should().NotBeEmpty("the scan must actually find Core's sources");
+        return files;
     }
 
     private static string FindSourceRoot()
@@ -2402,7 +2414,9 @@ public class ArchitectureTests
 
 The test project *may* touch `System.IO` — only `DrMoustache.Core` is constrained.
 
-Note: the word `row` is deliberately **excluded** from this test despite appearing in the spec's list, because `TableRow` is a legitimate Markdown construct, not a transport concept. Record this reasoning in the test file as a comment so a later reader does not "fix" the omission.
+Note the `CoreSourceFiles` helper asserts the scan is non-empty. Without that guard, a wrong path would make every architecture test pass vacuously — which is exactly the failure mode these tests exist to prevent.
+
+The reasoning for excluding `row` is carried as a comment in the test file itself, so a later reader does not "fix" the omission.
 
 - [ ] **Step 10: Run the full suite**
 
