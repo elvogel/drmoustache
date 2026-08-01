@@ -9,3 +9,4 @@ artifacts/
 TestResults/
 *.binlog
 .DS_Store
+.superpowers/
