@@ -46,6 +46,15 @@ public class RoundTripTests
         "ok\n1. listed",
         "ok\n---",
         "ok\n===",
+        // A lone CR is one of CommonMark's three line terminators, and it
+        // reaches a record from classic-Mac text, some CSV and mainframe
+        // exports, and any field that has had the '\n' stripped from a '\r\n'
+        // pair. Splitting on '\n' alone treated these as a single line, so the
+        // block rules never re-fired -- the same injection one terminator over.
+        "ok\r# Pwned",
+        "ok\r> quote",
+        "ok\r\r# double CR",
+        "a\rlone carriage return",
         "a\nnewline",
         "a\r\nwindows newline",
         "   leading spaces",
@@ -123,12 +132,19 @@ public class RoundTripTests
     /// escaping back to the original value.</summary>
     private static string ExtractText(MarkdownDocument document)
     {
-        var sb = new StringBuilder();
+        var paragraphs = new List<string>();
 
         foreach (var paragraph in document.Descendants<ParagraphBlock>())
+        {
+            var sb = new StringBuilder();
             AppendInlines(sb, paragraph.Inline);
+            paragraphs.Add(sb.ToString());
+        }
 
-        return sb.ToString();
+        // A value carrying a blank line legitimately ends the paragraph and
+        // starts another. Rejoining with the blank line puts back exactly what
+        // the value contained; concatenating the paragraphs would swallow it.
+        return string.Join("\n\n", paragraphs);
     }
 
     /// <summary>Walks the cell's parsed inline tree rather than reading
@@ -186,13 +202,17 @@ public class RoundTripTests
         }
     }
 
-    /// <summary>Newlines legitimately become &lt;br&gt; in a cell, and
-    /// whitespace around a line is not significant to Markdown. Everything else
-    /// must survive byte for byte.</summary>
+    /// <summary>Newlines legitimately become &lt;br&gt; in a cell, and whitespace
+    /// around a line is not significant to Markdown. Which of the three line
+    /// terminators was used is not significant either -- Markdig normalises them
+    /// all to '\n' as it parses -- so all three fold together here, longest
+    /// first. What must survive byte for byte is everything between the line
+    /// breaks, and how many line breaks there are.</summary>
     private static string Normalise(string s) => string.Join(
         '\n',
         s.Replace("<br>", "\n", StringComparison.Ordinal)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal)
             .Split('\n')
             .Select(line => line.Trim()))
         .Trim();

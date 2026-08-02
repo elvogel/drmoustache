@@ -265,6 +265,58 @@ public class DeliveryPlannerTests
         parsed["layout"].Should().Be("message");
     }
 
+    /// <summary>Parsing the passthrough block as YAML before interpolation is
+    /// what makes the emitted frontmatter safe, but it also means the block must
+    /// already be valid YAML. An unquoted tag is read as a flow mapping, and
+    /// used to emit 'title:\n  ? name:\n  :' -- the value gone, with no
+    /// exception and no warning. The design says this form fails, and names the
+    /// error it should produce.</summary>
+    [Theory]
+    [InlineData("title: {{name}}")]
+    [InlineData("  nested: {{name}}")]
+    public void AnUnquotedFrontmatterTagIsRejectedWithTheSpecsGuidance(string passthrough)
+    {
+        var act = () => DeliveryPlanner.Plan(
+            Fanout(CollisionPolicy.Error),
+            TemplateLexer.Lex("out/{{id}}.md"),
+            TemplateLexer.Lex("body"),
+            passthrough,
+            [new Rec("a", "Alpha")]);
+
+        act.Should().Throw<DeliveryException>()
+            .Which.Message.Should()
+            .Contain("value must be quoted")
+            .And.Contain("YAML reads a leading '{' as a flow mapping")
+            .And.Contain("{{name}}\"");
+    }
+
+    /// <summary>The same mistake where a line scan cannot see it. It reaches the
+    /// renderer as a non-scalar mapping key instead.</summary>
+    [Fact]
+    public void AnUnquotedTagInsideAFlowSequenceIsRejectedToo()
+    {
+        var act = () => DeliveryPlanner.Plan(
+            Fanout(CollisionPolicy.Error),
+            TemplateLexer.Lex("out/{{id}}.md"),
+            TemplateLexer.Lex("body"),
+            "tags: [a, {{name}}]",
+            [new Rec("a", "Alpha")]);
+
+        act.Should().Throw<DeliveryException>()
+            .Which.Message.Should()
+            .Contain("value must be quoted").And.Contain("{{name}}");
+    }
+
+    [Fact]
+    public void TheQuotedFormStillRoundTrips()
+        => DeliveryPlanner.Plan(
+                Fanout(CollisionPolicy.Error),
+                TemplateLexer.Lex("out/{{id}}.md"),
+                TemplateLexer.Lex("body"),
+                "title: \"{{name}}\"",
+                [new Rec("a", "Alpha")])
+            .Documents[0].Content.Should().StartWith("---\ntitle: Alpha\n---\n");
+
     [Fact]
     public void PassthroughFrontmatterKeepsNonScalarStructure()
     {

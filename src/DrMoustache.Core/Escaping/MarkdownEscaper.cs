@@ -120,17 +120,28 @@ public static class MarkdownEscaper
         var applyBlockRules = blockRulesOnFirstLine;
         var start = 0;
 
-        while (start <= value.Length)
+        while (true)
         {
-            var breakAt = value.IndexOf('\n', start);
-            var lineEnd = breakAt < 0 ? value.Length : breakAt;
+            // All three CommonMark line terminators, not just '\n'. Splitting on
+            // '\n' alone treated a value carrying a lone '\r' as a single line,
+            // so the block rules never re-fired and 'ok\r# Pwned' still produced
+            // a live heading — the same defect one terminator over. A lone '\r'
+            // reaches us from classic-Mac text, some CSV and mainframe exports,
+            // and any field that has had the '\n' stripped from a '\r\n' pair.
+            var offset = value.AsSpan(start).IndexOfAny('\r', '\n');
+            var lineEnd = offset < 0 ? value.Length : start + offset;
 
             AppendLine(sb, value.AsSpan(start, lineEnd - start), applyBlockRules);
 
-            if (breakAt < 0) break;
+            if (offset < 0) break;
 
-            sb.Append('\n');
-            start = breakAt + 1;
+            // '\r\n' is one terminator. Consuming it as two would insert a
+            // phantom empty line between the CR and the LF.
+            var next = lineEnd + 1;
+            if (value[lineEnd] == '\r' && next < value.Length && value[next] == '\n') next++;
+
+            sb.Append(value.AsSpan(lineEnd, next - lineEnd));
+            start = next;
             applyBlockRules = true;
         }
 
@@ -200,6 +211,15 @@ public static class MarkdownEscaper
         }
     }
 
+    /// <summary>Percent-encodes what a link destination cannot carry literally.
+    ///
+    /// The line terminators are here for the same reason the block rules run on
+    /// every line: a raw newline inside a destination ends the line, putting
+    /// whatever follows at column 0, where it is live block syntax. A value of
+    /// <c>x\n&gt; quote</c> in <c>[text]({{url}})</c> produced a real blockquote
+    /// and <c>x\n```</c> a real fenced code block, which then swallowed the rest
+    /// of the document. A literal CR or LF is not valid in a URL anyway, so
+    /// encoding it is what the destination wanted regardless.</summary>
     private static string EscapeLinkTarget(string value)
     {
         var sb = new StringBuilder(value.Length + 8);
@@ -211,6 +231,8 @@ public static class MarkdownEscaper
                 case ' ': sb.Append("%20"); break;
                 case '(': sb.Append("%28"); break;
                 case ')': sb.Append("%29"); break;
+                case '\r': sb.Append("%0D"); break;
+                case '\n': sb.Append("%0A"); break;
                 default: sb.Append(c); break;
             }
         }

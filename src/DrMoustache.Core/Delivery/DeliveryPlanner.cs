@@ -237,6 +237,8 @@ public static class DeliveryPlanner
     /// price of guaranteeing the output parses.</summary>
     private static string RenderFrontmatter(string passthrough, object? scope)
     {
+        GuardUnquotedTag(passthrough);
+
         object? graph;
 
         try
@@ -262,6 +264,60 @@ public static class DeliveryPlanner
         }
     }
 
+    /// <summary>Rejects a frontmatter value written as a bare <c>{{tag}}</c>.
+    ///
+    /// Parsing the block as YAML *before* interpolation is what makes the
+    /// emitted frontmatter safe, but it also means the block must already be
+    /// valid YAML — and YAML reads a leading <c>{</c> as a flow mapping, so
+    /// <c>title: {{name}}</c> parses as a mapping whose key is a mapping and
+    /// emits <c>title:\n  ? name:\n  :</c>, losing the value entirely and
+    /// without a word. The design says this form *fails*, and names the error
+    /// it should produce; silently emitting a garbage complex key is not
+    /// failing.
+    ///
+    /// <c>FrontmatterParser.GuardLeadingBrace</c> raises this same message when
+    /// a template is parsed, which is the path a CLI render takes. This guard
+    /// covers the planner being called directly — by an embedded host, or by a
+    /// test — so the mistake produces one consistent message either way.</summary>
+    private static void GuardUnquotedTag(string passthrough)
+    {
+        foreach (var line in passthrough.Split('\n'))
+        {
+            var colon = line.IndexOf(':', StringComparison.Ordinal);
+            if (colon < 0) continue;
+
+            var value = line[(colon + 1)..].Trim();
+            if (!value.StartsWith("{{", StringComparison.Ordinal)) continue;
+
+            var rawKey = line[..colon];
+            var indent = rawKey[..(rawKey.Length - rawKey.TrimStart().Length)];
+            var key = rawKey.Trim();
+
+            throw new DeliveryException(
+                "value must be quoted\n"
+                + $"       {indent}{key}: {value}\n"
+                + $"       {indent}{new string(' ', key.Length + 2)}^ YAML reads a leading "
+                + "'{' as a flow mapping\n"
+                + $"       write:  {indent}{key}: \"{value}\"");
+        }
+    }
+
+    /// <summary>The same mistake in a position the line scan cannot see, such as
+    /// <c>tags: [a, {{name}}]</c>: YAML turned the tag into a mapping, so it
+    /// arrives here as a non-scalar mapping key. Nothing legitimate produces
+    /// one, and letting it through would emit the same silent corruption.</summary>
+    private static DeliveryException UnquotedTag(object key) =>
+        new("value must be quoted\n"
+            + $"       a frontmatter value of {DescribeTag(key)} is read by YAML as a "
+            + "flow mapping, not as text\n"
+            + $"       write:  \"{DescribeTag(key)}\"");
+
+    private static string DescribeTag(object key) =>
+        key is IDictionary { Count: 1 } inner
+        && inner.Keys.Cast<object>().First() is string name
+            ? $"{{{{{name}}}}}"
+            : "{{…}}";
+
     // Matched through the non-generic interfaces on purpose: YamlDotNet hands
     // back Dictionary<object, object> and List<object>, and generic interfaces
     // are invariant, so IDictionary<object, object?> would never match.
@@ -278,7 +334,11 @@ public static class DeliveryPlanner
         var result = new Dictionary<object, object?>();
 
         foreach (DictionaryEntry entry in map)
+        {
+            if (entry.Key is IDictionary or IList) throw UnquotedTag(entry.Key);
+
             result[RenderYamlNode(entry.Key, scope) ?? ""] = RenderYamlNode(entry.Value, scope);
+        }
 
         return result;
     }

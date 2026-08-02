@@ -114,6 +114,34 @@ public class MarkdownEscaperTests
     public void EveryLineOfAMultiLineValueGetsTheBlockRules(string value, string expected)
         => MarkdownEscaper.Escape(value, MarkdownContext.Inline).Should().Be(expected);
 
+    // A lone '\r' is one of CommonMark's three line terminators. Splitting the
+    // value on '\n' alone treated 'ok\r# Pwned' as a single line, so the block
+    // rules never re-fired and the heading stayed live -- C2 verbatim, arriving
+    // via a different terminator.
+    [Theory]
+    [InlineData("ok\r# Pwned", "ok\r\\# Pwned")]
+    [InlineData("ok\r> quote", "ok\r\\> quote")]
+    [InlineData("ok\r\r# double", "ok\r\r\\# double")]
+    [InlineData("ok\r\n# crlf", "ok\r\n\\# crlf")]
+    [InlineData("ok\n\r# lf then cr", "ok\n\r\\# lf then cr")]
+    public void ALoneCarriageReturnAlsoStartsANewLine(string value, string expected)
+        => MarkdownEscaper.Escape(value, MarkdownContext.Inline).Should().Be(expected);
+
+    [Fact]
+    public void ACrLfPairIsOneLineBreakNotTwo()
+        => MarkdownEscaper.Escape("a\r\nb", MarkdownContext.Inline).Should().Be("a\r\nb");
+
+    // The same '\n' assumption in the link-destination path: a raw newline ends
+    // the line, putting whatever follows at column 0 as live block syntax.
+    // '[text]({{v}})' with 'x\n> quote' produced a real blockquote, and with
+    // 'x\n```' a real fenced code block that swallowed the rest of the document.
+    [Theory]
+    [InlineData("x\n> quote", "x%0A>%20quote")]
+    [InlineData("x\r# heading", "x%0D#%20heading")]
+    [InlineData("x\r\n```", "x%0D%0A```")]
+    public void ALinkTargetPercentEncodesLineTerminators(string value, string expected)
+        => MarkdownEscaper.Escape(value, MarkdownContext.LinkTarget).Should().Be(expected);
+
     [Fact]
     public void ANewlineCannotIntroduceATable()
         => MarkdownEscaper.Escape("ok\n| a | b |", MarkdownContext.Inline)
