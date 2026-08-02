@@ -2087,7 +2087,7 @@ EOF
 
 ---
 
-**Part 2** — `docs/superpowers/plans/2026-08-02-drmoustache-cli-part2.md` — covers:
+**Part 2** — [`2026-08-02-drmoustache-cli-part2.md`](2026-08-02-drmoustache-cli-part2.md) — covers:
 
 - **Task 8:** Atomic document writing (never a partial file on disk)
 - **Task 9:** The `render` verb end to end
