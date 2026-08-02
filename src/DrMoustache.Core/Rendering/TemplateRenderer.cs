@@ -15,18 +15,29 @@ public static class TemplateRenderer
     /// over scalars.</summary>
     private const string SelfPath = ".";
 
-    public static string Render(IReadOnlyList<TemplateNode> nodes, object? context)
+    /// <param name="nodes">The lexed node tree to render.</param>
+    /// <param name="context">The root data bound to the template.</param>
+    /// <param name="culture">The culture used to format numbers, dates, and
+    /// other <see cref="IFormattable"/> values, including inside helpers.
+    /// <see langword="null"/> (the default) renders with
+    /// <see cref="CultureInfo.InvariantCulture"/>, so the same template and
+    /// data produce byte-identical output regardless of the host's ambient
+    /// culture. Pass an explicit culture to opt into localised output.</param>
+    public static string Render(
+        IReadOnlyList<TemplateNode> nodes, object? context, CultureInfo? culture = null)
     {
         ArgumentNullException.ThrowIfNull(nodes);
 
+        var effectiveCulture = culture ?? CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
         var scopes = new List<object?> { context };
-        Write(nodes, scopes, sb);
+        Write(nodes, scopes, sb, effectiveCulture);
         return sb.ToString();
     }
 
     private static void Write(
-        IReadOnlyList<TemplateNode> nodes, List<object?> scopes, StringBuilder sb)
+        IReadOnlyList<TemplateNode> nodes, List<object?> scopes, StringBuilder sb,
+        CultureInfo culture)
     {
         foreach (var node in nodes)
         {
@@ -37,24 +48,24 @@ public static class TemplateRenderer
                     break;
 
                 case RawNode raw:
-                    sb.Append(Stringify(Lookup(scopes, raw.Path)));
+                    sb.Append(ValueText.Format(Lookup(scopes, raw.Path), culture));
                     break;
 
                 case InterpolationNode interp:
                     sb.Append(MarkdownEscaper.Escape(
-                        Stringify(Lookup(scopes, interp.Path)), interp.Context));
+                        ValueText.Format(Lookup(scopes, interp.Path), culture), interp.Context));
                     break;
 
                 case HelperNode helper:
                     sb.Append(MarkdownEscaper.Escape(
                         HelperRegistry.Apply(
                             helper.Helper, Lookup(scopes, helper.Path),
-                            helper.Argument, helper.Line),
+                            helper.Argument, helper.Line, culture),
                         helper.Context));
                     break;
 
                 case SectionNode section:
-                    WriteSection(section, scopes, sb);
+                    WriteSection(section, scopes, sb, culture);
                     break;
 
                 default:
@@ -65,14 +76,14 @@ public static class TemplateRenderer
     }
 
     private static void WriteSection(
-        SectionNode section, List<object?> scopes, StringBuilder sb)
+        SectionNode section, List<object?> scopes, StringBuilder sb, CultureInfo culture)
     {
         var value = Lookup(scopes, section.Path);
         var truthy = ValueResolver.IsTruthy(value);
 
         if (section.Inverted)
         {
-            if (!truthy) Write(section.Children, scopes, sb);
+            if (!truthy) Write(section.Children, scopes, sb, culture);
             return;
         }
 
@@ -83,7 +94,7 @@ public static class TemplateRenderer
             foreach (var item in sequence)
             {
                 scopes.Add(item);
-                Write(section.Children, scopes, sb);
+                Write(section.Children, scopes, sb, culture);
                 scopes.RemoveAt(scopes.Count - 1);
             }
 
@@ -91,7 +102,7 @@ public static class TemplateRenderer
         }
 
         scopes.Add(value);
-        Write(section.Children, scopes, sb);
+        Write(section.Children, scopes, sb, culture);
         scopes.RemoveAt(scopes.Count - 1);
     }
 
@@ -110,13 +121,4 @@ public static class TemplateRenderer
 
         return null;
     }
-
-    private static string Stringify(object? value) => value switch
-    {
-        null => "",
-        string s => s,
-        bool b => b ? "true" : "false",
-        IFormattable f => f.ToString(null, CultureInfo.CurrentCulture),
-        _ => value.ToString() ?? "",
-    };
 }

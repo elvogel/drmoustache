@@ -1,5 +1,6 @@
 namespace DrMoustache.Core.Tests.Rendering;
 
+using System.Globalization;
 using DrMoustache.Core.Rendering;
 using DrMoustache.Core.Template;
 using FluentAssertions;
@@ -11,6 +12,8 @@ public class TemplateRendererTests
 
     private sealed record Model(
         string Title, string? Note, decimal Total, IReadOnlyList<Item> Items);
+
+    private sealed record FlagModel(bool Flag);
 
     private static string Render(string template, object? model)
         => TemplateRenderer.Render(TemplateLexer.Lex(template), model);
@@ -94,4 +97,47 @@ public class TemplateRendererTests
         => Render("{{#items}}{{title}}-{{name}};{{/items}}",
                 new Model("T", null, 0, [new("a", 1)]))
             .Should().Be("T-a;");
+
+    [Fact]
+    public void FormattingIsInvariantByDefaultRegardlessOfAmbientCulture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+            TemplateRenderer.Render(
+                    TemplateLexer.Lex("Total: {{total}}"), new Model("x", null, 1234.5m, []))
+                .Should().Be("Total: 1234.5");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
+    public void ExplicitCultureOptsIntoLocalisedFormatting()
+        => TemplateRenderer.Render(
+                TemplateLexer.Lex("Total: {{total}}"), new Model("x", null, 1234.5m, []),
+                CultureInfo.GetCultureInfo("de-DE"))
+            .Should().Be("Total: 1234,5");
+
+    [Fact]
+    public void ExplicitCultureReachesHelpers()
+        => TemplateRenderer.Render(
+                TemplateLexer.Lex("Total: {{format total \"N2\"}}"), new Model("x", null, 1234.5m, []),
+                CultureInfo.GetCultureInfo("de-DE"))
+            .Should().Be("Total: 1.234,50");
+
+    [Fact]
+    public void BoolRendersIdenticallyThroughInterpolationAndHelper()
+    {
+        TemplateRenderer.Render(TemplateLexer.Lex("{{flag}}"), new FlagModel(true))
+            .Should().Be("true");
+
+        TemplateRenderer.Render(TemplateLexer.Lex("{{default flag \"n/a\"}}"), new FlagModel(true))
+            .Should().Be("true");
+    }
 }

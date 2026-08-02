@@ -15,21 +15,33 @@ public static class HelperRegistry
     public static bool IsKnown(string name) =>
         Array.IndexOf(Names, name) >= 0;
 
+    /// <param name="name">The helper name, e.g. <c>"upper"</c>.</param>
+    /// <param name="value">The value passed through the helper.</param>
+    /// <param name="argument">The helper's string argument, e.g. a format string.</param>
+    /// <param name="line">The source line, used for diagnostics.</param>
+    /// <param name="culture">The culture used to format numbers and dates.
+    /// <see langword="null"/> (the default) uses
+    /// <see cref="CultureInfo.InvariantCulture"/>, matching
+    /// <see cref="Rendering.TemplateRenderer.Render"/>'s default so a
+    /// template's own interpolations and its helper output agree.</param>
 #pragma warning disable CA1062 // Validate parameters is non-null — intentionally accepts null values for all helpers except 'default'
-    public static string Apply(string name, object? value, string? argument, int line)
+    public static string Apply(
+        string name, object? value, string? argument, int line, CultureInfo? culture = null)
     {
         ArgumentNullException.ThrowIfNull(name);
 
+        var effectiveCulture = culture ?? CultureInfo.InvariantCulture;
+
         return name switch
         {
-            "date" => Date(value, argument, line),
-            "format" => Format(value, argument, line),
-            "upper" => Stringify(value).ToUpperInvariant(),
+            "date" => Date(value, argument, line, effectiveCulture),
+            "format" => Format(value, argument, line, effectiveCulture),
+            "upper" => ValueText.Format(value, effectiveCulture).ToUpperInvariant(),
 #pragma warning disable CA1308 // Use ToUpperInvariant — intentionally using ToLowerInvariant for 'lower' helper semantics
-            "lower" => Stringify(value).ToLowerInvariant(),
+            "lower" => ValueText.Format(value, effectiveCulture).ToLowerInvariant(),
 #pragma warning restore CA1308
-            "join" => Join(value, argument, line),
-            "default" => Default(value, argument),
+            "join" => Join(value, argument, line, effectiveCulture),
+            "default" => Default(value, argument, effectiveCulture),
             _ => throw new TemplateException(
                 $"unknown helper '{name}' (line {line})\n"
                 + $"       available: {string.Join(", ", Names)}", line),
@@ -37,19 +49,19 @@ public static class HelperRegistry
     }
 #pragma warning restore CA1062
 
-    private static string Date(object? value, string? format, int line) => value switch
+    private static string Date(object? value, string? format, int line, CultureInfo culture) => value switch
     {
         null => "",
-        DateTimeOffset d => d.ToString(format ?? "O", CultureInfo.CurrentCulture),
-        DateTime d => d.ToString(format ?? "O", CultureInfo.CurrentCulture),
-        DateOnly d => d.ToString(format ?? "O", CultureInfo.CurrentCulture),
-        TimeOnly t => t.ToString(format ?? "O", CultureInfo.CurrentCulture),
+        DateTimeOffset d => d.ToString(format ?? "O", culture),
+        DateTime d => d.ToString(format ?? "O", culture),
+        DateOnly d => d.ToString(format ?? "O", culture),
+        TimeOnly t => t.ToString(format ?? "O", culture),
         _ => throw new TemplateException(
             $"'date' needs a temporal value but got "
             + $"{value.GetType().Name} (line {line})", line),
     };
 
-    private static string Format(object? value, string? format, int line)
+    private static string Format(object? value, string? format, int line, CultureInfo culture)
     {
         if (value is null) return "";
 
@@ -58,14 +70,14 @@ public static class HelperRegistry
                 $"'format' does not format temporal values — use 'date' instead (line {line})", line);
 
         if (value is not string && value is IFormattable formattable)
-            return formattable.ToString(format, CultureInfo.CurrentCulture);
+            return formattable.ToString(format, culture);
 
         throw new TemplateException(
             $"'format' needs a numeric value but got "
             + $"{value.GetType().Name} (line {line})", line);
     }
 
-    private static string Join(object? value, string? separator, int line)
+    private static string Join(object? value, string? separator, int line, CultureInfo culture)
     {
         if (value is null) return "";
 
@@ -74,20 +86,12 @@ public static class HelperRegistry
                 $"'join' needs a collection but got "
                 + $"{value.GetType().Name} (line {line})", line);
 
-        return string.Join(separator ?? ", ", sequence.Select(Stringify));
+        return string.Join(separator ?? ", ", sequence.Select(v => ValueText.Format(v, culture)));
     }
 
-    private static string Default(object? value, string? fallback)
+    private static string Default(object? value, string? fallback, CultureInfo culture)
     {
-        var text = Stringify(value);
+        var text = ValueText.Format(value, culture);
         return text.Length == 0 ? fallback ?? "" : text;
     }
-
-    private static string Stringify(object? value) => value switch
-    {
-        null => "",
-        string s => s,
-        IFormattable f => f.ToString(null, CultureInfo.CurrentCulture),
-        _ => value.ToString() ?? "",
-    };
 }
