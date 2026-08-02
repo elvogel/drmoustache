@@ -1,14 +1,51 @@
 namespace DrMoustache.Core.Tests.Delivery;
 
+using System.Globalization;
+using DrMoustache.Abstractions;
 using DrMoustache.Core.Delivery;
 using DrMoustache.Core.Frontmatter;
 using DrMoustache.Core.Template;
 using FluentAssertions;
 using Xunit;
+using YamlDotNet.Serialization;
 
 public class DeliveryPlannerTests
 {
-    private sealed record Rec(string Id, string Name);
+    // CA1812: instantiated by the tests below and reflected over by ManifestBuilder.
+#pragma warning disable CA1812
+    [DrMoustacheRecord("rec")]
+    private sealed record Rec(
+        [property: Field] string Id,
+        [property: Field] string Name);
+
+    /// <summary>Deliberately a record with a collection field: the synthesised
+    /// ToString prints 'Tags = System.String[]', so hashing the string form
+    /// gave two of these the same short hash and one document overwrote the
+    /// other.</summary>
+    [DrMoustacheRecord("tagged")]
+    private sealed record Tagged(
+        [property: Field] string Id,
+        [property: Field] IReadOnlyList<string> Tags);
+
+    /// <summary>Deliberately a plain class, not a record: it inherits
+    /// object.ToString(), which returns the type name and nothing else, so
+    /// every instance hashed identically.</summary>
+    [DrMoustacheRecord("plain")]
+    private sealed class Plain
+    {
+        [Field] public required string Id { get; init; }
+
+        [Field] public required string Name { get; init; }
+    }
+
+    /// <summary>A decimal field exists to catch culture-sensitive formatting:
+    /// object.ToString() renders 12.5 as '12,5' under de-DE, so the same
+    /// records hashed differently per machine.</summary>
+    [DrMoustacheRecord("priced")]
+    private sealed record Priced(
+        [property: Field] string Id,
+        [property: Field] decimal Total);
+#pragma warning restore CA1812
 
     private static DeliveryResult Plan(
         RenderConfig config, string body, params Rec[] records)
@@ -185,9 +222,184 @@ public class DeliveryPlannerTests
             passthrough: "title: \"{{name}}\"",
             [new Rec("a", "Alpha")]);
 
+        // The frontmatter is re-serialised by YamlDotNet rather than spliced
+        // together as text, so the author's own quoting is not preserved --
+        // only the value is, and the block always parses.
         result.Documents[0].Content.Should()
-            .StartWith("---\ntitle: \"Alpha\"\n---\n").And.EndWith("body");
+            .StartWith("---\ntitle: Alpha\n---\n").And.EndWith("body");
     }
+
+    /// <summary>The passthrough block is YAML, not Markdown. Markdown-escaping
+    /// it produced documents no YAML parser could read: 'Acme *Corp*' became
+    /// 'title: "Acme \*Corp\*"' (an unknown escape), a value containing a quote
+    /// ended the scalar early, and 'C:\temp' was read back as 'C:&lt;TAB&gt;emp'.
+    /// Every one of these must now survive a real parse.</summary>
+    [Theory]
+    [InlineData("Acme *Corp*")]
+    [InlineData("order [42]")]
+    [InlineData("the \"big\" order")]
+    [InlineData(@"C:\temp")]
+    [InlineData("under_score and `backtick`")]
+    [InlineData("pipe | pipe")]
+    [InlineData("two\nlines")]
+    [InlineData("{ looks like flow }")]
+    [InlineData("- looks like a sequence")]
+    [InlineData("")]
+    public void PassthroughFrontmatterRoundTripsThroughAYamlParser(string value)
+    {
+        var result = DeliveryPlanner.Plan(
+            Fanout(CollisionPolicy.Error),
+            TemplateLexer.Lex("out/{{id}}.md"),
+            TemplateLexer.Lex("body"),
+            passthrough: "title: \"{{name}}\"\nlayout: message",
+            [new Rec("a", value)]);
+
+        var content = result.Documents[0].Content;
+        var frontmatter = content[4..content.IndexOf("\n---\n", StringComparison.Ordinal)];
+
+        var parsed = new DeserializerBuilder().Build()
+            .Deserialize<Dictionary<string, string>>(frontmatter);
+
+        parsed.Should().ContainKey("title");
+        parsed["title"].Should().Be(value);
+        parsed["layout"].Should().Be("message");
+    }
+
+    [Fact]
+    public void PassthroughFrontmatterKeepsNonScalarStructure()
+    {
+        var result = DeliveryPlanner.Plan(
+            Fanout(CollisionPolicy.Error),
+            TemplateLexer.Lex("out/{{id}}.md"),
+            TemplateLexer.Lex("body"),
+            passthrough: "tags: [deadletter, \"{{name}}\"]",
+            [new Rec("a", "Acme *Corp*")]);
+
+        var content = result.Documents[0].Content;
+        var frontmatter = content[4..content.IndexOf("\n---\n", StringComparison.Ordinal)];
+
+        new DeserializerBuilder().Build()
+            .Deserialize<Dictionary<string, List<string>>>(frontmatter)["tags"]
+            .Should().BeEquivalentTo(["deadletter", "Acme *Corp*"]);
+    }
+
+    [Fact]
+    public void SuffixHashDistinguishesRecordsDifferingOnlyInACollectionField()
+    {
+        var config = new RenderConfig(
+            "s", DeliveryMode.Fanout, "out/{{id}}.md", CollisionPolicy.Suffix);
+
+        var result = DeliveryPlanner.Plan(
+            config, TemplateLexer.Lex(config.Output), TemplateLexer.Lex("x"),
+            passthrough: "",
+            [new Tagged("same", ["a"]), new Tagged("same", ["b"])]);
+
+        result.Documents.Select(d => d.Path).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void SuffixHashDistinguishesInstancesOfAPlainClass()
+    {
+        var config = new RenderConfig(
+            "s", DeliveryMode.Fanout, "out/{{id}}.md", CollisionPolicy.Suffix);
+
+        var result = DeliveryPlanner.Plan(
+            config, TemplateLexer.Lex(config.Output), TemplateLexer.Lex("x"),
+            passthrough: "",
+            [
+                new Plain { Id = "same", Name = "A" },
+                new Plain { Id = "same", Name = "B" },
+            ]);
+
+        result.Documents.Select(d => d.Path).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void SuffixHashDoesNotVaryWithTheAmbientCulture()
+    {
+        var original = CultureInfo.CurrentCulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            var invariant = PricedPaths();
+
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            PricedPaths().Should().BeEquivalentTo(invariant,
+                "a filename that changes with the host's locale is not deterministic");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+
+        static IEnumerable<string> PricedPaths()
+        {
+            var config = new RenderConfig(
+                "s", DeliveryMode.Fanout, "out/{{id}}.md", CollisionPolicy.Suffix);
+
+            return DeliveryPlanner.Plan(
+                    config, TemplateLexer.Lex(config.Output), TemplateLexer.Lex("x"),
+                    passthrough: "",
+                    [new Priced("same", 12.5m), new Priced("same", 1234.75m)])
+                .Documents.Select(d => d.Path).ToList();
+        }
+    }
+
+    /// <summary>'a', 'a', 'a-2' produced a.md, a-2.md, a-2.md: the generated
+    /// ordinal landed on a path a third record legitimately owned, and the
+    /// writer silently overwrote one of them.</summary>
+    [Fact]
+    public void OrdinalSuffixNeverLandsOnAnAlreadyClaimedPath()
+    {
+        var result = Plan(Fanout(CollisionPolicy.Ordinal), "x",
+            new Rec("a", "A"), new Rec("a", "B"), new Rec("a-2", "C"));
+
+        result.Documents.Should().HaveCount(3);
+        result.Documents.Select(d => d.Path).Should().OnlyHaveUniqueItems();
+        result.Documents.Select(d => d.Path).Should()
+            .BeEquivalentTo(["out/a.md", "out/a-3.md", "out/a-2.md"]);
+    }
+
+    [Theory]
+    [InlineData(CollisionPolicy.Ordinal)]
+    [InlineData(CollisionPolicy.Suffix)]
+    [InlineData(CollisionPolicy.Overwrite)]
+    public void EveryPlannedDocumentPathIsDistinct(CollisionPolicy policy)
+    {
+        var result = Plan(Fanout(policy), "x",
+            new Rec("a", "A"), new Rec("a", "B"), new Rec("a-2", "C"),
+            new Rec("a-2", "D"), new Rec("b", "E"));
+
+        result.Documents.Select(d => d.Path).Should().OnlyHaveUniqueItems();
+    }
+
+    /// <summary>Both values slug to nothing, so the path assembled to
+    /// 'out//.md', which the sanitiser reduced to 'out/.md' -- a hidden file
+    /// with no name, produced without a word.</summary>
+    [Fact]
+    public void AnEmptiedSlugSegmentProducesNoDotfileAndIsWarnedAbout()
+    {
+        var config = new RenderConfig(
+            "s", DeliveryMode.Fanout, "out/{{id}}/{{name}}.md", CollisionPolicy.Error);
+        var result = Plan(config, "x", new Rec("", ""));
+
+        result.Documents[0].Path.Split('/').Should()
+            .OnlyContain(segment => !segment.StartsWith('.'));
+
+        result.Warnings.Should().HaveCount(2)
+            .And.Contain(w => w.Contains("'id'", StringComparison.Ordinal))
+            .And.Contain(w => w.Contains("'name'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AnEmptiedSlugWarnsOncePerFieldNotOncePerRecord()
+        => Plan(
+                new RenderConfig(
+                    "s", DeliveryMode.Fanout, "out/{{name}}-{{id}}.md",
+                    CollisionPolicy.Ordinal),
+                "x", new Rec("a", ""), new Rec("b", ""), new Rec("c", ""))
+            .Warnings.Should().ContainSingle();
 
     [Fact]
     public void NoFrontmatterIsEmittedWhenPassthroughIsEmpty()
