@@ -19,8 +19,11 @@ public sealed class RecordManifest(string name, IReadOnlyList<ManifestField> fie
 
         foreach (var segment in path.Split('.'))
         {
+            // Case-insensitive to match the renderer's own lookup: with an
+            // ordinal comparison '{{OrderId}}' failed 'check' and then rendered
+            // perfectly, which is the worst way for a CI gate to be wrong.
             var match = current.FirstOrDefault(f =>
-                string.Equals(f.Path, segment, StringComparison.Ordinal));
+                string.Equals(f.Path, segment, StringComparison.OrdinalIgnoreCase));
 
             if (match is null)
             {

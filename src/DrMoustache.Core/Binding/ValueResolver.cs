@@ -7,7 +7,12 @@ using System.Reflection;
 /// <summary>Resolves dotted template paths against a record.</summary>
 public static class ValueResolver
 {
-    private static readonly ConcurrentDictionary<(Type, string), PropertyInfo?> Cache = new();
+    /// <summary>Keyed by the upper-cased segment, so '{{orderId}}' and
+    /// '{{OrderId}}' share one entry instead of reflecting twice over the same
+    /// type. The entry holds every candidate rather than a single resolution,
+    /// which is what lets the exact-case preference below survive a
+    /// case-insensitive cache key.</summary>
+    private static readonly ConcurrentDictionary<(Type, string), PropertyInfo[]> Cache = new();
 
     public static bool TryResolve(object? root, string path, out object? value)
     {
@@ -22,12 +27,15 @@ public static class ValueResolver
 
             if (current is IDictionary<string, object?> bag)
             {
-                if (!bag.TryGetValue(segment, out current)) return false;
+                if (!TryResolveDictionary(bag, segment, out current)) return false;
                 continue;
             }
 
-            var property = Cache.GetOrAdd((current.GetType(), segment), static key =>
-                ResolveProperty(key.Item1, key.Item2));
+            var candidates = Cache.GetOrAdd(
+                (current.GetType(), segment.ToUpperInvariant()),
+                static key => Candidates(key.Item1, key.Item2));
+
+            var property = Select(candidates, segment);
 
             if (property is null) return false;
 
@@ -38,30 +46,42 @@ public static class ValueResolver
         return true;
     }
 
-    private static PropertyInfo? ResolveProperty(Type type, string name)
+    /// <summary>Dictionary lookup matches property lookup: case-insensitively.
+    /// While the exact key wins when present, '{{OrderId}}' used to return
+    /// empty against a dictionary and resolve against a POCO carrying the same
+    /// data — the same template behaving differently by model shape.</summary>
+    private static bool TryResolveDictionary(
+        IDictionary<string, object?> bag, string segment, out object? value)
     {
-        // Try exact-case match first to handle types with properties differing only in case.
-        // Use no IgnoreCase flag here to avoid ambiguity exceptions.
-        var exactMatch = type.GetProperty(name,
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+        if (bag.TryGetValue(segment, out value)) return true;
 
-        if (exactMatch is not null)
+        foreach (var key in bag.Keys)
         {
-            return exactMatch;
+            if (!string.Equals(key, segment, StringComparison.OrdinalIgnoreCase)) continue;
+
+            value = bag[key];
+            return true;
         }
 
-        // Fall back to case-insensitive lookup, catching AmbiguousMatchException.
-        try
-        {
-            return type.GetProperty(name,
-                BindingFlags.Public | BindingFlags.Instance
-                | BindingFlags.IgnoreCase | BindingFlags.FlattenHierarchy);
-        }
-        catch (AmbiguousMatchException)
-        {
-            // Treat ambiguous case-insensitive paths as unresolvable (no exact match found).
-            return null;
-        }
+        value = null;
+        return false;
+    }
+
+    private static PropertyInfo[] Candidates(Type type, string upperName) =>
+        [.. type
+            .GetProperties(
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
+            .Where(p => string.Equals(p.Name, upperName, StringComparison.OrdinalIgnoreCase))];
+
+    /// <summary>Exact case wins when a type carries properties differing only
+    /// in case. Absent an exact match, a lone candidate resolves and a genuinely
+    /// ambiguous one does not.</summary>
+    private static PropertyInfo? Select(PropertyInfo[] candidates, string name)
+    {
+        foreach (var candidate in candidates)
+            if (string.Equals(candidate.Name, name, StringComparison.Ordinal)) return candidate;
+
+        return candidates.Length == 1 ? candidates[0] : null;
     }
 
     /// <summary>Section presence test. Null, false, empty string, and empty

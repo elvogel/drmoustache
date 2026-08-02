@@ -58,6 +58,28 @@ public class ValueResolverTests
         v.Should().Be("x");
     }
 
+    /// <summary>Property lookup has always been case-insensitive; dictionary
+    /// lookup was not, so '{{OrderId}}' rendered empty against a dictionary
+    /// and correctly against a POCO carrying the same data.</summary>
+    [Theory]
+    [InlineData("orderId")]
+    [InlineData("OrderId")]
+    [InlineData("ORDERID")]
+    public void MatchesDictionaryKeysCaseInsensitively(string path)
+    {
+        var bag = new Dictionary<string, object?> { ["orderId"] = "ORD-1" };
+        ValueResolver.TryResolve(bag, path, out var v).Should().BeTrue();
+        v.Should().Be("ORD-1");
+    }
+
+    [Fact]
+    public void PrefersTheExactDictionaryKeyWhenBothCasesExist()
+    {
+        var bag = new Dictionary<string, object?> { ["Total"] = 100, ["total"] = 200 };
+        ValueResolver.TryResolve(bag, "total", out var v).Should().BeTrue();
+        v.Should().Be(200);
+    }
+
     [Theory]
     [InlineData(null, false)]
     [InlineData(false, false)]

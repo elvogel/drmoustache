@@ -37,6 +37,16 @@ public class RecordManifestTests
         f!.Type.Should().Be(FieldType.Decimal);
     }
 
+    /// <summary>The renderer resolves paths case-insensitively, so the manifest
+    /// must too: an ordinal comparison made '{{OrderId}}' fail 'check' and then
+    /// render perfectly.</summary>
+    [Theory]
+    [InlineData("OrderId")]
+    [InlineData("ORDERID")]
+    [InlineData("Order.Total")]
+    public void ResolvesFieldsCaseInsensitively(string path)
+        => Build().TryResolve(path, out _).Should().BeTrue();
+
     [Fact]
     public void FailsOnUnknownPath()
     {

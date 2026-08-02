@@ -12,9 +12,4 @@ public sealed record ManifestField(
     FieldType Type,
     bool IsNullable,
     string? Description,
-    IReadOnlyList<ManifestField> Children)
-{
-    /// <summary>True when a value of this type can never contain
-    /// Markdown-significant characters, so escaping can be skipped.</summary>
-    public bool IsEscapeExempt => Type is not (FieldType.String or FieldType.Object);
-}
+    IReadOnlyList<ManifestField> Children);
