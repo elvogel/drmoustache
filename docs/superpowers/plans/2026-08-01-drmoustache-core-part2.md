@@ -1341,7 +1341,7 @@ public static class HelperRegistry
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `dotnet test DrMoustache.slnx --filter FullyQualifiedName~HelperRegistryTests`
-Expected: 22 tests passed.
+Expected: 21 tests passed.
 
 - [ ] **Step 5: Commit**
 
