@@ -248,9 +248,20 @@ across files.
 
 ### `fanout` — one document per record
 
-Root context is the record. `output` is a Mustache pattern over the record's fields,
-slugified: lowercased, whitespace to `-`, path separators and filesystem-unsafe
-characters stripped. Directory segments in the pattern are created as needed.
+Root context is the record. `output` is a Mustache pattern over the record's fields.
+
+**Interpolated values are slugified individually, before they are spliced into the
+pattern — never after.** Slugification lowercases, converts whitespace to `-`, and
+strips path separators, dot segments, and filesystem-unsafe characters. Directory
+structure comes only from literal `/` written by the template author; a value
+containing `/` collapses to a single segment.
+
+This is a security boundary, not a formatting preference. Records frequently
+originate in untrusted external input — a dead-letter queue message, an API
+response — and a value such as `../../etc/passwd` must not be able to write outside
+the output directory. Slugifying the *composed* path rather than each value cannot
+provide this guarantee, because by then the data's separators are indistinguishable
+from the template's own.
 
 `onCollision` is **required** and has no library default. Choosing a collision policy
 is the user's decision, not the tool's; omitting it is a template error listing the
@@ -375,6 +386,27 @@ provider's job, and a value that needs computing should be computed there.
 
 Helper output is escaped by the same context rules as a plain interpolation.
 Helpers do not bypass escaping.
+
+### Culture
+
+**Formatting is invariant by default.** Numbers, dates, and any other
+`IFormattable` value render identically regardless of the machine's locale, so the
+same template and data produce byte-identical output on a developer's laptop and in
+CI. For a tool whose artifacts are committed and diffed, a build that varies by host
+locale is a defect.
+
+A caller who wants localised output opts in explicitly:
+
+```csharp
+TemplateRenderer.Render(nodes, model, CultureInfo.GetCultureInfo("de-DE"));
+```
+
+The culture flows through to helpers, so `{{format total "N2"}}` and
+`{{date placedAt "d"}}` honour it too.
+
+One consequence worth stating: `true` and `false` render lowercase, and a single
+shared formatter is used for both plain interpolations and helper output — the same
+value must never render differently depending on whether a helper touched it.
 
 ## Configuration
 
