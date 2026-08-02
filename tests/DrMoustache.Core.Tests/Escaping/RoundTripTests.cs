@@ -28,6 +28,24 @@ public class RoundTripTests
         "back`tick",
         "back``ticks",
         @"back\slash",
+        // A backslash immediately before a special was the gap that let the
+        // missing '\' escape through: '\|pipe' escaped to '\\|pipe', whose
+        // leading pair CommonMark consumes as a literal backslash, leaving the
+        // pipe live to shatter the row.
+        @"\|pipe",
+        @"\*emph",
+        @"back\slash|pipe",
+        @"back\\slash|pipe",
+        @"trailing backslash\",
+        // Block structure smuggled in behind a newline.
+        "ok\n# Pwned",
+        "ok\n| a | b |\n|---|---|",
+        "ok\n    indented",
+        "ok\n> quoted",
+        "ok\n```\nfenced",
+        "ok\n1. listed",
+        "ok\n---",
+        "ok\n===",
         "a\nnewline",
         "a\r\nwindows newline",
         "   leading spaces",
@@ -60,6 +78,59 @@ public class RoundTripTests
         Normalise(cellText).Should().Be(Normalise(value));
     }
 
+    /// <summary>The same property one context out. A value interpolated
+    /// mid-paragraph must come back unchanged and must not have restructured
+    /// the document around it: exactly one paragraph, and the literal text the
+    /// value went in as.</summary>
+    [Theory]
+    [MemberData(nameof(HostileValues))]
+    public void InlineSurvivesRoundTrip(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        var escaped = MarkdownEscaper.Escape(value, MarkdownContext.Inline);
+        var document = Markdown.Parse($"prefix {escaped} suffix\n", Pipeline);
+
+        document.Should().AllBeOfType<ParagraphBlock>(
+            "an interpolated value must not introduce a heading, list, quote, "
+            + "table, or code block");
+
+        Normalise(ExtractText(document)).Should().Be(Normalise($"prefix {value} suffix"));
+    }
+
+    /// <summary>And one context further out again: the value's own first
+    /// character sits at column 0, where a block marker would otherwise be
+    /// live.</summary>
+    [Theory]
+    [MemberData(nameof(HostileValues))]
+    public void LineStartSurvivesRoundTrip(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        var escaped = MarkdownEscaper.Escape(value, MarkdownContext.LineStart);
+        var document = Markdown.Parse($"{escaped} tail\n", Pipeline);
+
+        document.Should().AllBeOfType<ParagraphBlock>(
+            "an interpolated value must not introduce a heading, list, quote, "
+            + "table, or code block");
+
+        Normalise(ExtractText(document)).Should().Be(Normalise($"{value} tail"));
+    }
+
+    /// <summary>Concatenates the literal text of every paragraph in the
+    /// document, the same way <see cref="ExtractText(TableRow)"/> does for a
+    /// cell: it is the parser, not a string diff, that must resolve the
+    /// escaping back to the original value.</summary>
+    private static string ExtractText(MarkdownDocument document)
+    {
+        var sb = new StringBuilder();
+
+        foreach (var paragraph in document.Descendants<ParagraphBlock>())
+            AppendInlines(sb, paragraph.Inline);
+
+        return sb.ToString();
+    }
+
     /// <summary>Walks the cell's parsed inline tree rather than reading
     /// <c>LeafBlock.Lines</c>. Two reasons: (1) table-cell paragraphs are
     /// parsed from a re-sliced buffer, so <c>Lines</c> is never populated for
@@ -74,11 +145,17 @@ public class RoundTripTests
     {
         var cell = (TableCell)row[0];
         var paragraph = cell.Descendants<ParagraphBlock>().FirstOrDefault();
-        if (paragraph?.Inline is null) return string.Empty;
 
         var sb = new StringBuilder();
+        AppendInlines(sb, paragraph?.Inline);
+        return sb.ToString();
+    }
 
-        foreach (var inline in paragraph.Inline)
+    private static void AppendInlines(StringBuilder sb, ContainerInline? container)
+    {
+        if (container is null) return;
+
+        foreach (var inline in container)
         {
             switch (inline)
             {
@@ -91,21 +168,32 @@ public class RoundTripTests
                     // contained verbatim (HTML entities are never escaped).
                     sb.Append(html.Tag);
                     break;
+                case HtmlEntityInline entity:
+                    // A four-space indent at column 0 is broken by replacing
+                    // the first space with '&#32;', which the parser decodes
+                    // straight back to the space it stands for.
+                    sb.Append(entity.Transcoded.ToString());
+                    break;
+                case LineBreakInline:
+                    // Outside a table a newline in a value stays a newline.
+                    sb.Append('\n');
+                    break;
                 default:
                     throw new InvalidOperationException(
-                        $"Unexpected inline type in table cell: {inline.GetType()}. "
+                        $"Unexpected inline type: {inline.GetType()}. "
                         + "MarkdownEscaper should have escaped whatever produced it.");
             }
         }
-
-        return sb.ToString();
     }
 
     /// <summary>Newlines legitimately become &lt;br&gt; in a cell, and
-    /// surrounding whitespace is not significant. Everything else must survive
-    /// byte for byte.</summary>
-    private static string Normalise(string s) => s
-        .Replace("<br>", "\n", StringComparison.Ordinal)
-        .Replace("\r\n", "\n", StringComparison.Ordinal)
+    /// whitespace around a line is not significant to Markdown. Everything else
+    /// must survive byte for byte.</summary>
+    private static string Normalise(string s) => string.Join(
+        '\n',
+        s.Replace("<br>", "\n", StringComparison.Ordinal)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n')
+            .Select(line => line.Trim()))
         .Trim();
 }

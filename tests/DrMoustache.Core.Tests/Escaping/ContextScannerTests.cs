@@ -127,4 +127,33 @@ public class ContextScannerTests
     [Fact]
     public void UnterminatedCodeSpanDoesNotLeakOntoAFollowingTableRow()
         => At("`a\n| @h1 | h2 |").Should().Be(MarkdownContext.TableRow);
+
+    // --- I6: an unmatched backtick run is literal text ---------------------
+    //
+    // CommonMark reads a backtick run with no closing run as ordinary text,
+    // but the scanner opened a span on any run and never reconsidered. Because
+    // CodeSpan escapes nothing, a stray backtick in prose switched escaping
+    // OFF for everything up to the next paragraph interrupt -- silently, and
+    // for tags the scanner would otherwise have labelled correctly.
+
+    [Fact]
+    public void AnUnmatchedBacktickRunDoesNotDisableEscapingAfterIt()
+        => At("a ` stray backtick @here").Should().NotBe(MarkdownContext.CodeSpan);
+
+    [Fact]
+    public void AnUnmatchedBacktickRunIsItselfLiteralText()
+        => At("a @` stray backtick here").Should().NotBe(MarkdownContext.CodeSpan);
+
+    [Fact]
+    public void AnUnmatchedBacktickRunAtEndOfDocumentIsUndone()
+        => At("prose ` then @more").Should().Be(MarkdownContext.Inline);
+
+    [Fact]
+    public void AMatchedBacktickRunIsStillACodeSpan()
+        => At("a `@b` c").Should().Be(MarkdownContext.CodeSpan);
+
+    [Fact]
+    public void AnUnmatchedRunOnAnEarlierLineDoesNotSwallowALaterParagraph()
+        => At("a ` stray\nstill the same @paragraph")
+            .Should().NotBe(MarkdownContext.CodeSpan);
 }

@@ -26,6 +26,13 @@ public static class ContextScanner
         // paragraph the span started in.
         var codeSpanTicks = 0;
 
+        // Where the currently-open code span's opening backtick run starts, so
+        // an unmatched run can be undone. CommonMark treats a backtick run with
+        // no matching closer as literal text, but this scanner opens a span on
+        // any run — a stray backtick in prose therefore used to switch escaping
+        // off for everything up to the next paragraph interrupt.
+        var codeSpanStart = 0;
+
         while (i < template.Length)
         {
             var lineEnd = FindLineEnd(template, i);
@@ -50,7 +57,7 @@ public static class ContextScanner
             else if (TryReadFenceOpen(line, out var openChar, out var openLength))
             {
                 if (InterruptsParagraph(entersFence: true, isBlank: false, isTableRow: false))
-                    codeSpanTicks = 0;
+                    CloseUnmatchedCodeSpan(result, ref codeSpanTicks, codeSpanStart, i);
 
                 Fill(result, i, lineEnd, MarkdownContext.FencedCode);
                 fenceChar = openChar;
@@ -62,9 +69,10 @@ public static class ContextScanner
                 var isTableRow = LooksLikeTableRow(template, i, lineEnd);
 
                 if (InterruptsParagraph(entersFence: false, isBlank: IsBlankLine(line), isTableRow))
-                    codeSpanTicks = 0;
+                    CloseUnmatchedCodeSpan(result, ref codeSpanTicks, codeSpanStart, i);
 
-                ScanTextLine(template, i, lineEnd, result, ref codeSpanTicks, isTableRow);
+                ScanTextLine(
+                    template, i, lineEnd, result, ref codeSpanTicks, ref codeSpanStart, isTableRow);
                 lineBreakContext = isTableRow ? MarkdownContext.TableRow : MarkdownContext.Inline;
             }
 
@@ -73,7 +81,29 @@ public static class ContextScanner
             Fill(result, lineBreakStart, i, lineBreakContext);
         }
 
+        // A span still open at the end of the document was never closed either.
+        CloseUnmatchedCodeSpan(result, ref codeSpanTicks, codeSpanStart, template.Length);
+
         return result;
+    }
+
+    /// <summary>Undoes a code span that turned out to have no closing run.
+    /// CommonMark reads such a run as ordinary text, so every position the
+    /// scanner optimistically marked <see cref="MarkdownContext.CodeSpan"/>
+    /// from the opening run onwards reverts to
+    /// <see cref="MarkdownContext.Inline"/> — the difference being that
+    /// CodeSpan escapes nothing, so leaving it in place silently disabled
+    /// escaping for the rest of the paragraph.</summary>
+    private static void CloseUnmatchedCodeSpan(
+        MarkdownContext[] result, ref int codeSpanTicks, int codeSpanStart, int end)
+    {
+        if (codeSpanTicks == 0) return;
+
+        for (var i = codeSpanStart; i < end && i < result.Length; i++)
+            if (result[i] == MarkdownContext.CodeSpan)
+                result[i] = MarkdownContext.Inline;
+
+        codeSpanTicks = 0;
     }
 
     /// <summary>A code span cannot cross a construct that interrupts the
@@ -100,7 +130,7 @@ public static class ContextScanner
 
     private static void ScanTextLine(
         string template, int start, int end, MarkdownContext[] result,
-        ref int codeSpanTicks, bool isTableRow)
+        ref int codeSpanTicks, ref int codeSpanStart, bool isTableRow)
     {
         var baseContext = isTableRow ? MarkdownContext.TableRow : MarkdownContext.Inline;
 
@@ -141,6 +171,7 @@ public static class ContextScanner
                 var run = CountRun(template, i, '`', end);
                 Fill(result, i, i + run, MarkdownContext.CodeSpan);
                 codeSpanTicks = run;
+                codeSpanStart = i;
                 i += run;
                 continue;
             }
