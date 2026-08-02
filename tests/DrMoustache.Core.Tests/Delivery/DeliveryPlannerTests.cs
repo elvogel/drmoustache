@@ -32,6 +32,76 @@ public class DeliveryPlannerTests
     public void SlugifiesSafely(string input, string expected)
         => Slug.Make(input).Should().Be(expected);
 
+    [Theory]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("...")]
+    public void SlugifyProducesNoDotOnlySegment(string input)
+        => Slug.Make(input).Should().BeEmpty();
+
+    [Fact]
+    public void SlugifyStripsLeadingDotsSoNoHiddenFileIsProduced()
+        => Slug.Make(".hidden").Should().Be("hidden");
+
+    [Fact]
+    public void FanoutSlugifiesEachInterpolatedValueBeforeSplicingIntoTheOutputPattern()
+    {
+        // A record value containing a path separator must collapse into a
+        // single path segment, not invent a directory the template author
+        // never wrote.
+        var result = Plan(Fanout(CollisionPolicy.Error), "x", new Rec("a/b", "A"));
+
+        result.Documents.Should().ContainSingle();
+        result.Documents[0].Path.Should().Be("out/a-b.md");
+    }
+
+    [Fact]
+    public void FanoutCannotEscapeTheOutputDirectoryViaDotDotSegments()
+    {
+        // A record value of "../../etc/passwd" must not let data write
+        // outside the directory the 'output' pattern's own literal text
+        // established. Every resulting path segment must stay under 'out/'.
+        var result = Plan(Fanout(CollisionPolicy.Error), "x",
+            new Rec("../../etc/passwd", "A"));
+
+        result.Documents.Should().ContainSingle();
+        var path = result.Documents[0].Path;
+
+        path.Should().StartWith("out/");
+        path.Split('/').Should().OnlyContain(segment => segment != "." && segment != "..");
+    }
+
+    [Fact]
+    public void FanoutProducesNoDotSegmentWhenTheIdIsOnlyDots()
+    {
+        var result = Plan(Fanout(CollisionPolicy.Error), "x", new Rec("..", "A"));
+
+        result.Documents.Should().ContainSingle();
+        result.Documents[0].Path.Split('/').Should().OnlyContain(segment => segment != "..");
+    }
+
+    [Fact]
+    public void FanoutStillHonoursLiteralMultiSegmentOutputPatterns()
+    {
+        // Directory structure the template author actually wrote in the
+        // 'output' pattern's literal text must still work.
+        var config = new RenderConfig(
+            "s", DeliveryMode.Fanout, "out/{{id}}/{{name}}.md", CollisionPolicy.Error);
+        var result = Plan(config, "x", new Rec("a", "b"));
+
+        result.Documents.Should().ContainSingle();
+        result.Documents[0].Path.Should().Be("out/a/b.md");
+    }
+
+    [Fact]
+    public void FanoutCollapsesABackslashInAValueToo()
+    {
+        var result = Plan(Fanout(CollisionPolicy.Error), "x", new Rec(@"a\b", "A"));
+
+        result.Documents.Should().ContainSingle();
+        result.Documents[0].Path.Should().Be("out/a-b.md");
+    }
+
     [Fact]
     public void FanoutProducesOneDocumentPerRecord()
     {
@@ -123,4 +193,18 @@ public class DeliveryPlannerTests
     public void NoFrontmatterIsEmittedWhenPassthroughIsEmpty()
         => Plan(Fanout(CollisionPolicy.Error), "body", new Rec("a", "A"))
             .Documents[0].Content.Should().Be("body");
+
+    [Fact]
+    public void InsertSuffixesTheFilenameNotADotInADirectoryName()
+    {
+        // "a.b/same" has a dot in the *directory* segment and none in the
+        // filename. The suffix must land at the end of the path, not be
+        // spliced in front of the directory's dot.
+        var config = new RenderConfig(
+            "s", DeliveryMode.Fanout, "a.b/{{id}}", CollisionPolicy.Ordinal);
+        var result = Plan(config, "x", new Rec("same", "A"), new Rec("same", "B"));
+
+        result.Documents.Select(d => d.Path).Should()
+            .BeEquivalentTo(["a.b/same", "a.b/same-2"]);
+    }
 }

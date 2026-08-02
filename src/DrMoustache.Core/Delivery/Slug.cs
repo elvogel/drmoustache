@@ -35,6 +35,12 @@ public static class Slug
             // characters — is dropped without leaving a separator.
         }
 
-        return sb.ToString();
+        // A value of "." or ".." (or any run of leading dots) must not
+        // survive as a path segment: those are directory-traversal tokens
+        // to a filesystem, and a lone leading dot silently creates a
+        // hidden file. Strip leading dots; if nothing else is left, the
+        // slug is empty.
+        var slug = sb.ToString().TrimStart('.');
+        return slug.Length == 0 || slug.All(c => c == '.') ? "" : slug;
     }
 }

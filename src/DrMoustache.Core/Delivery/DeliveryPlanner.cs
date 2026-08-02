@@ -3,7 +3,9 @@ namespace DrMoustache.Core.Delivery;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using DrMoustache.Core.Binding;
 using DrMoustache.Core.Frontmatter;
+using DrMoustache.Core.Helpers;
 using DrMoustache.Core.Rendering;
 using DrMoustache.Core.Template;
 
@@ -67,7 +69,7 @@ public static class DeliveryPlanner
 
         foreach (var record in records)
         {
-            var path = SlugifyPath(TemplateRenderer.Render(outputPattern, record));
+            var path = RenderOutputPath(outputPattern, record);
 
             if (!byPath.TryGetValue(path, out var bucket))
             {
@@ -148,9 +150,79 @@ public static class DeliveryPlanner
         return $"---\n{frontmatter.TrimEnd('\n')}\n---\n{content}";
     }
 
-    private static string SlugifyPath(string path) =>
-        string.Join('/', path.Split('/', StringSplitOptions.RemoveEmptyEntries)
-            .Select(Slug.Make));
+    /// <summary>Renders an 'output' pattern into a path, slugifying each
+    /// interpolated value individually before it is spliced in. Directory
+    /// structure comes only from literal '/' the template author wrote —
+    /// never from a record's own data. This is a security boundary, not a
+    /// formatting preference: rendering the pattern as ordinary template
+    /// text and then slugifying the *result* (the previous approach) let a
+    /// field value containing '/' invent directory structure, and one
+    /// containing '../' escape the output directory entirely.</summary>
+    private static string RenderOutputPath(IReadOnlyList<TemplateNode> pattern, object? record)
+    {
+        var sb = new StringBuilder();
+
+        foreach (var node in pattern)
+        {
+            switch (node)
+            {
+                case TextNode text:
+                    // The template author's own literal separators — the
+                    // only legitimate source of directory structure.
+                    sb.Append(text.Text);
+                    break;
+
+                case InterpolationNode interp:
+                    sb.Append(Slug.Make(ValueText.Format(
+                        Lookup(record, interp.Path), CultureInfo.InvariantCulture)));
+                    break;
+
+                case RawNode raw:
+                    // A raw tag suppresses Markdown escaping, not path safety.
+                    sb.Append(Slug.Make(ValueText.Format(
+                        Lookup(record, raw.Path), CultureInfo.InvariantCulture)));
+                    break;
+
+                case HelperNode helper:
+                    sb.Append(Slug.Make(HelperRegistry.Apply(
+                        helper.Helper, Lookup(record, helper.Path), helper.Argument,
+                        helper.Line, CultureInfo.InvariantCulture)));
+                    break;
+
+                default:
+                    throw new DeliveryException(
+                        $"'{node.GetType().Name}' is not supported in an 'output' pattern");
+            }
+        }
+
+        return SanitizePath(sb.ToString());
+    }
+
+    private static object? Lookup(object? record, string path) =>
+        ValueResolver.TryResolve(record, path, out var value) ? value : null;
+
+    /// <summary>Belt-and-braces guard on the fully assembled path. Every
+    /// value segment was already slugified in <see cref="RenderOutputPath"/>
+    /// and can no longer contain '/', so this should be unreachable — but a
+    /// security boundary warrants a second, independent check, and it
+    /// documents the invariant for the next reader. Drops any segment that
+    /// is empty, '.', or '..', and rejects an absolute path.</summary>
+    private static string SanitizePath(string path)
+    {
+        if (Path.IsPathRooted(path))
+            throw new DeliveryException(
+                $"'output' pattern produced an absolute path: '{path}'");
+
+        var segments = path.Split('/')
+            .Where(s => s.Length > 0 && s != "." && s != "..")
+            .ToArray();
+
+        if (segments.Length == 0)
+            throw new DeliveryException(
+                $"'output' pattern produced an empty path: '{path}'");
+
+        return string.Join('/', segments);
+    }
 
     private static string Insert(string path, string suffix)
     {
