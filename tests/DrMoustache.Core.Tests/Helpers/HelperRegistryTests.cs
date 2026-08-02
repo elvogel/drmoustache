@@ -65,6 +65,29 @@ public class HelperRegistryTests
         act.Should().Throw<TemplateException>().WithMessage("*format*line 4*");
     }
 
+    [Theory]
+    [InlineData(typeof(DateTime))]
+    [InlineData(typeof(DateTimeOffset))]
+    [InlineData(typeof(DateOnly))]
+    [InlineData(typeof(TimeOnly))]
+#pragma warning disable CA1062 // Type is always provided by test framework via InlineData
+    public void FormatRejectsTemporalTypes(Type temporalType)
+    {
+        object? temporalValue = temporalType.Name switch
+        {
+            nameof(DateTime) => new DateTime(2026, 8, 1),
+            nameof(DateTimeOffset) => new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero),
+            nameof(DateOnly) => new DateOnly(2026, 8, 1),
+            nameof(TimeOnly) => new TimeOnly(12, 0, 0),
+            _ => throw new InvalidOperationException($"Unknown temporal type: {temporalType.Name}")
+        };
+
+        var act = () => HelperRegistry.Apply("format", temporalValue, "O", 5);
+        act.Should().Throw<TemplateException>()
+            .WithMessage("*format*date*line 5*");
+    }
+#pragma warning restore CA1062
+
     [Fact]
     public void UpperAndLowerUseInvariantCasing()
     {
@@ -81,10 +104,12 @@ public class HelperRegistryTests
     public void JoinDefaultsToCommaSpace()
         => HelperRegistry.Apply("join", TwoStringArray, null, 1).Should().Be("a, b");
 
-    [Fact]
-    public void JoinRejectsNonSequences()
+    [Theory]
+    [InlineData(42)]
+    [InlineData("not a sequence")]
+    public void JoinRejectsNonSequences(object nonSequence)
     {
-        var act = () => HelperRegistry.Apply("join", 42, ", ", 9);
+        var act = () => HelperRegistry.Apply("join", nonSequence, ", ", 9);
         act.Should().Throw<TemplateException>().WithMessage("*join*line 9*");
     }
 

@@ -53,10 +53,11 @@ public static class HelperRegistry
     {
         if (value is null) return "";
 
-        if (value is not string
-            && value is not DateTime and not DateTimeOffset
-            and not DateOnly and not TimeOnly
-            && value is IFormattable formattable)
+        if (value is DateTime or DateTimeOffset or DateOnly or TimeOnly)
+            throw new TemplateException(
+                $"'format' does not format temporal values — use 'date' instead (line {line})", line);
+
+        if (value is not string && value is IFormattable formattable)
             return formattable.ToString(format, CultureInfo.CurrentCulture);
 
         throw new TemplateException(
