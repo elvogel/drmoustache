@@ -1,5 +1,6 @@
 namespace DrMoustache.Core.Validation;
 
+using DrMoustache.Core.Frontmatter;
 using DrMoustache.Core.Helpers;
 using DrMoustache.Core.Manifest;
 using DrMoustache.Core.Template;
@@ -8,16 +9,43 @@ using DrMoustache.Core.Template;
 /// Backs the CLI's <c>check</c> verb.</summary>
 public static class TemplateValidator
 {
+    /// <param name="nodes">The lexed template.</param>
+    /// <param name="manifest">The record manifest the provider declared.</param>
+    /// <param name="delivery">The template's delivery mode. It changes what the
+    /// root scope is, and therefore what a bare tag means: under
+    /// <see cref="DeliveryMode.Fanout"/> the root is the record itself, but
+    /// under <see cref="DeliveryMode.Collate"/> the root is the planner's
+    /// collate scope, which exposes only <c>count</c> and <c>records</c>.
+    /// Validating a collate template against the record manifest reported
+    /// 'unknown field' for both — and, because <c>{{#records}}</c> appeared to
+    /// fail, never descended into the loop body, so collate templates received
+    /// no field checking at all.</param>
     public static IReadOnlyList<string> Validate(
-        IReadOnlyList<TemplateNode> nodes, RecordManifest manifest)
+        IReadOnlyList<TemplateNode> nodes,
+        RecordManifest manifest,
+        DeliveryMode delivery = DeliveryMode.Fanout)
     {
         ArgumentNullException.ThrowIfNull(nodes);
         ArgumentNullException.ThrowIfNull(manifest);
 
         var errors = new List<string>();
-        Walk(nodes, manifest, prefix: null, errors);
+        Walk(nodes, RootScope(manifest, delivery), prefix: null, errors);
         return errors;
     }
+
+    /// <summary>The manifest as the template actually sees it. Mirrors
+    /// <c>DeliveryPlanner</c>'s collate root scope.</summary>
+    private static RecordManifest RootScope(RecordManifest manifest, DeliveryMode delivery)
+        => delivery is DeliveryMode.Collate
+            ? new RecordManifest(manifest.Name, [
+                new ManifestField(
+                    "count", FieldType.Integer, IsNullable: false,
+                    "how many records the provider yielded", []),
+                new ManifestField(
+                    "records", FieldType.Collection, IsNullable: false,
+                    $"every '{manifest.Name}' record", manifest.Fields),
+            ])
+            : manifest;
 
     private static void Walk(
         IReadOnlyList<TemplateNode> nodes, RecordManifest manifest,
@@ -111,12 +139,24 @@ public static class TemplateValidator
                 + $"{field.Type} (line {helper.Line})");
     }
 
+    /// <summary>Walks the enclosing section scopes innermost-first, exactly as
+    /// <c>TemplateRenderer.Lookup</c> does at render time. Trying only the
+    /// fully-combined prefix and the bare root missed every intermediate scope,
+    /// so from three levels of nesting on, the validator reported 'unknown
+    /// field' for tags the renderer resolves without difficulty.</summary>
     private static ManifestField? Resolve(
         RecordManifest manifest, string? prefix, string path)
     {
-        if (manifest.TryResolve(Combine(prefix, path), out var scoped)) return scoped;
-        if (manifest.TryResolve(path, out var root)) return root;
-        return null;
+        var scope = prefix;
+
+        while (true)
+        {
+            if (manifest.TryResolve(Combine(scope, path), out var field)) return field;
+            if (scope is null) return null;
+
+            var dot = scope.LastIndexOf('.');
+            scope = dot < 0 ? null : scope[..dot];
+        }
     }
 
     private static string Combine(string? prefix, string path) =>

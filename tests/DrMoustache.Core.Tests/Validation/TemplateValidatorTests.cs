@@ -1,6 +1,7 @@
 namespace DrMoustache.Core.Tests.Validation;
 
 using DrMoustache.Abstractions;
+using DrMoustache.Core.Frontmatter;
 using DrMoustache.Core.Manifest;
 using DrMoustache.Core.Template;
 using DrMoustache.Core.Validation;
@@ -39,10 +40,17 @@ public class TemplateValidatorTests
 
     [Fact]
     public void RejectsUnknownFieldsAndSuggestsANearMiss()
-        => Validate("{{orderid}}").Should().ContainSingle()
-            .Which.Should().Contain("orderid")
+        => Validate("{{ordreId}}").Should().ContainSingle()
+            .Which.Should().Contain("ordreId")
             .And.Contain("did you mean 'orderId'")
             .And.Contain("the customer-facing order number");
+
+    /// <summary>The renderer resolves paths case-insensitively, so 'check'
+    /// must too: '{{OrderId}}' used to fail the CI gate and then render
+    /// perfectly.</summary>
+    [Fact]
+    public void AcceptsFieldsReferencedWithDifferentCasing()
+        => Validate("{{OrderId}} {{Order.Id}}").Should().BeEmpty();
 
     [Fact]
     public void RejectsDirectObjectInterpolation()
@@ -75,4 +83,53 @@ public class TemplateValidatorTests
     [Fact]
     public void AllowsDotSelfReference()
         => Validate("{{#note}}{{.}}{{/note}}").Should().BeEmpty();
+
+    /// <summary>The renderer walks every enclosing scope innermost-first, so a
+    /// tag on the record's root resolves from inside two nested sections. The
+    /// validator tried only the fully-combined prefix and the bare root, so
+    /// from three levels of nesting on it invented errors the renderer
+    /// disagreed with.</summary>
+    [Fact]
+    public void ResolvesThroughIntermediateScopesAtThreeLevelsOfNesting()
+        => Validate("{{#items}}{{#order}}{{id}}{{/order}}{{/items}}").Should().BeEmpty();
+
+    [Fact]
+    public void ResolvesAnOuterFieldFromInsideANestedSection()
+        => Validate("{{#items}}{{#order}}{{orderId}}{{/order}}{{/items}}").Should().BeEmpty();
+
+    // --- collate delivery -------------------------------------------------
+    //
+    // Under collate the root scope is the planner's collate scope, not the
+    // record. Validating a collate template against the record manifest
+    // reported 'unknown field' for 'count' and 'records' -- and, because
+    // '{{#records}}' appeared to fail, never descended into the loop body, so
+    // collate templates got no field checking whatsoever.
+
+    private static IReadOnlyList<string> ValidateCollate(string template)
+        => TemplateValidator.Validate(
+            TemplateLexer.Lex(template), ManifestBuilder.FromType<Thing>(),
+            DeliveryMode.Collate);
+
+    [Fact]
+    public void AcceptsTheDesignsOwnCollateExample()
+        => ValidateCollate(
+                "# Dead-letter queue — {{count}} messages\n\n"
+                + "| Order | Total |\n|-------|-------|\n"
+                + "{{#records}}| {{orderId}} | {{total}} |\n{{/records}}")
+            .Should().BeEmpty();
+
+    [Fact]
+    public void StillChecksFieldsInsideACollateRecordsSection()
+        => ValidateCollate("{{#records}}{{nope}}{{/records}}")
+            .Should().ContainSingle().Which.Should().Contain("nope");
+
+    [Fact]
+    public void RejectsARecordFieldAtACollateTemplatesRoot()
+        => ValidateCollate("{{orderId}}").Should().ContainSingle()
+            .Which.Should().Contain("orderId");
+
+    [Fact]
+    public void DoesNotOfferCountOrRecordsToAFanoutTemplate()
+        => Validate("{{count}}").Should().ContainSingle()
+            .Which.Should().Contain("count");
 }
