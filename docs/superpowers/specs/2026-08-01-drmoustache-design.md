@@ -1,7 +1,24 @@
-# DrMoustache — Design
+# DrMoustache — Engine Design
 
 **Date:** 2026-08-01
-**Status:** Approved for planning
+**Status:** Implemented. Partially superseded.
+
+> **Partially superseded by
+> [`2026-08-04-drmoustache-v1-design.md`](2026-08-04-drmoustache-v1-design.md).**
+>
+> This document remains **authoritative for the rendering engine**: Markdown-aware
+> escaping, the template format, the manifest, delivery modes, collision policies,
+> helpers, culture, and per-value slugification.
+>
+> Four sections are **superseded** and describe a delivery model that was not built —
+> *Configuration*, *Configuration visibility to plugins*, *Plugin distribution and
+> loading*, and *CLI*. v1 ships as a `dotnet new` project template with dependency
+> injection instead of a global tool loading NuGet plugins, which deletes
+> `ProviderContext`, `scopeConfig`, and the hand-built configuration chain entirely.
+> Read the v1 design for what those sections became.
+>
+> The *Provider contract* section is also superseded in one respect: `ReadAsync` no
+> longer takes a `ProviderContext`.
 **Repo:** https://github.com/elvogel/drmoustache
 **License:** Apache-2.0
 
@@ -348,16 +365,16 @@ usually what is wanted.
 
 ### Overrides
 
-Inference is a default, never a cage. Explicit forms always win, giving an immediate
-local fix when inference is wrong.
-
 | Form | Behaviour |
 |---|---|
 | `{{x}}` | Inferred from context |
 | `{{{x}}}` | Raw, always, no escaping |
-| `{{cell x}}` | Force table-cell rules |
-| `{{inline x}}` | Force inline rules |
-| `{{text x}}` | Escape conservatively for all contexts |
+
+An earlier draft of this document also specified `{{cell x}}`, `{{inline x}}` and
+`{{text x}}` to force a particular escaping context. **They were never implemented
+and have been struck** — see the v1 design. No case has yet arisen where inference
+guessed wrong, and `{{{raw}}}` already serves as an escape hatch. They can return
+when a concrete template demonstrates the need, with that template as the test.
 
 ### Sections and whitespace
 

@@ -1,5 +1,13 @@
 # DrMoustache CLI Implementation Plan — Part 2: Verbs and Output
 
+> **DEFERRED — not executed.** v1 ships as a `dotnet new` project template with
+> dependency injection rather than a global tool loading NuGet plugins. See
+> [`2026-08-04-drmoustache-v1-design.md`](../specs/2026-08-04-drmoustache-v1-design.md).
+>
+> Tasks 8, 9, 10 and 13 largely survive into the hosting plan — atomic writing, the
+> render pipeline, record-level error collection, and documentation. Tasks 11 and 12
+> become library methods (`RenderAsync`, `CheckAsync`) rather than CLI verbs.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Continues** `2026-08-02-drmoustache-cli.md`. Tasks 1–7 (command shell, configuration, `drmoustache.yaml`, sample plugin, load context, acquisition, provider registry) must be complete before starting Task 8.

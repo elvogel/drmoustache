@@ -1,5 +1,19 @@
 # DrMoustache CLI Implementation Plan — Part 1: Host and Plugin Loading
 
+> **DEFERRED — not executed.** v1 ships as a `dotnet new` project template with
+> dependency injection rather than a global tool loading NuGet plugins. See
+> [`2026-08-04-drmoustache-v1-design.md`](../specs/2026-08-04-drmoustache-v1-design.md).
+>
+> This plan is kept because the design is sound for a different situation: a provider
+> written once and consumed by many, where the people writing templates are not the
+> people who wrote the reader. It costs more than it returns when the provider and
+> the templates are written together, which is the v1 case.
+>
+> Roughly half of it survives into the hosting plan — atomic writing, the render
+> pipeline, record-level error collection, template discovery. What does not:
+> `PluginLoadContext`, `PluginAcquisition`, `ProviderRegistry`, `drmoustache.yaml`,
+> and the hand-built configuration chain.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the `DrMoustache.Cli` host — configuration, plugin acquisition, and plugin loading — so that a third-party provider packaged as a NuGet package can be resolved, loaded with its full transitive dependency tree, and asked for records.
