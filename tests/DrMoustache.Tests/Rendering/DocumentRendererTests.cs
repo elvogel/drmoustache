@@ -361,6 +361,41 @@ public sealed class DocumentRendererTests : IDisposable
     }
 
     [Fact]
+    public async Task CheckReportsAMalformedOutputPattern()
+    {
+        // The output pattern is a template too, and check must lex it. Without
+        // this, a malformed pattern passes check and then fails the render —
+        // which is exactly the false green check exists to prevent.
+        Write("a.md", Fanout.Replace(
+            "output: stations/{{name}}.md",
+            "output: stations/{{#name}}.md",
+            StringComparison.Ordinal));
+
+        var result = await Renderer<StationProvider>()
+            .CheckAsync(TestContext.Current.CancellationToken);
+
+        result.Success.Should().BeFalse();
+        result.Problems.Should().ContainSingle()
+            .Which.Should().Contain("a.md").And.Contain("not closed");
+    }
+
+    [Fact]
+    public async Task CheckReportsAnUnknownFieldInTheOutputPattern()
+    {
+        Write("a.md", Fanout.Replace(
+            "output: stations/{{name}}.md",
+            "output: stations/{{naem}}.md",
+            StringComparison.Ordinal));
+
+        var result = await Renderer<StationProvider>()
+            .CheckAsync(TestContext.Current.CancellationToken);
+
+        result.Success.Should().BeFalse();
+        result.Problems.Should().ContainSingle()
+            .Which.Should().Contain("a.md").And.Contain("naem");
+    }
+
+    [Fact]
     public async Task CheckAcceptsACollateTemplate()
     {
         // A collate template validated as fanout reports 'count' and 'records'

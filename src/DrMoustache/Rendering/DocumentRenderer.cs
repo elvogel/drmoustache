@@ -2,6 +2,7 @@ namespace DrMoustache.Rendering;
 
 using DrMoustache.Abstractions;
 using DrMoustache.Core.Delivery;
+using DrMoustache.Core.Frontmatter;
 using DrMoustache.Core.Manifest;
 using DrMoustache.Core.Template;
 using DrMoustache.Core.Validation;
@@ -120,6 +121,23 @@ internal sealed class DocumentRenderer(
 
                 foreach (var problem in found)
                     problems.Add($"{template.Path}: {problem}");
+
+                // The output pattern is a template too, and RenderAsync lexes it.
+                // Checking only the body would let a malformed pattern pass check
+                // and then fail the render — the false green check exists to
+                // prevent. Lexing catches syntax for either delivery mode; field
+                // references are only meaningful for fanout, since collate uses
+                // the output verbatim as a single file name.
+                var outputNodes = TemplateLexer.Lex(config.Output);
+
+                if (config.Delivery == DeliveryMode.Fanout)
+                {
+                    var inOutput = TemplateValidator.Validate(
+                        outputNodes, manifest, DeliveryMode.Fanout);
+
+                    foreach (var problem in inOutput)
+                        problems.Add($"{template.Path}: output: {problem}");
+                }
             }
             catch (Exception ex)
                 when (ex is TemplateException or RenderException or ManifestException)

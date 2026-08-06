@@ -78,16 +78,8 @@ Found by the final whole-branch review's fix wave and parked with rulings rather
 than fixed, because the review process allows one consolidated fix wave and these
 arrived after it. Each was reproduced.
 
-### `--check` does not validate the `output:` expression
-
-`DocumentRenderer.Validate` lexes the template body but not `config.Output`; that lex
-happens only in `RenderAsync`. So a template with a malformed output pattern — say an
-unclosed section in `output: "s/{{#name}}.md"` — passes `--check` and then fails the
-render.
-
-**Ruling:** real, and the same defect class as the Critical the wave just fixed for
-the body lex. It is roughly one line away from the changed code. Parked only because
-the wave's scope was already set; **fix this first** next time this file is touched.
+One of the original four — `--check` not validating the `output:` expression — has
+since been fixed and removed from this list.
 
 ### A frontmatter error still throws out of `CheckAsync`
 
