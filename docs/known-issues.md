@@ -62,22 +62,15 @@ second case where the parsed value does not equal the original.
   four literal spaces only. This one looks like an oversight rather than a decision
   and is the more likely of the two to want fixing.
 
-## Open — API and ergonomics
+## Delivery model
 
-### R5 — `TemplateValidator.Validate` defaults `DeliveryMode` to `Fanout`
+### The CLI and plugin loading are deferred
 
-There is no production caller yet, so nothing can currently hit the wrong default.
-But a `collate` template validated with the default silently reproduces the bug
-where `check` reports `unknown field 'count'` and then skips the loop body
-entirely — failing valid templates while passing broken ones.
-
-**Ruling:** the CLI plan builds the first caller. Make the parameter required at
-that point, or derive it from the template's own config.
-
-### Package metadata is missing
-
-No `<Version>`, no `PackageReadmeFile`, no `.editorconfig`, and no public-API
-surface guard — on two packages intended for third-party consumption.
+v1 ships as a `dotnet new` template with dependency injection. The plugin
+design is preserved in
+`docs/superpowers/plans/2026-08-02-drmoustache-cli*.md`, marked deferred, and
+becomes worth building when a provider is written once and consumed by many
+rather than written alongside the templates that use it.
 
 ## Deferred minor findings
 
