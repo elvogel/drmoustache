@@ -2275,7 +2275,7 @@ EOF
 
 ---
 
-**Part 2** — `docs/superpowers/plans/2026-08-05-drmoustache-hosting-part2.md` — covers:
+**Part 2** — [`2026-08-05-drmoustache-hosting-part2.md`](2026-08-05-drmoustache-hosting-part2.md) — covers:
 
 - **Task 8:** `DrMoustache.Templates` package plus the minimal template
 - **Task 9:** The worked-example template
