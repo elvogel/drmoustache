@@ -34,10 +34,14 @@ jobs:
 
       # Template tests pack and install, so they must not use --no-build:
       # they exercise the packaged artifacts, not this build's output.
-      # Do not size a timeout from a warm local run. The first CI run after a
-      # dependency change is cold and the template tests take many minutes.
+      # Do not size a timeout from a warm local run. The template tests restore
+      # Microsoft.Data.Sqlite and the Microsoft.Extensions tree into scaffolded
+      # projects; cold, that download dominates. The closest local measurement
+      # was 15m37s and even that had partially-warm packages, so the true cold
+      # cost is unmeasured. 45 minutes is deliberate headroom for a genuinely
+      # cold runner, not an estimate.
       - name: Test
-        timeout-minutes: 30
+        timeout-minutes: 45
         run: dotnet test DrMoustache.slnx -c Release --no-build
 
       - name: Pack
