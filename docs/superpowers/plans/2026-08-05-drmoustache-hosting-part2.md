@@ -1182,6 +1182,17 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # The template tests scaffold projects that restore Microsoft.Data.Sqlite
+      # and the Microsoft.Extensions.* tree from scratch. On a cold cache that
+      # download dominates the run: locally the suite took over 15 minutes cold
+      # and about 45 seconds warm. Caching turns most CI runs into the warm case.
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
       - name: Restore
         run: dotnet restore DrMoustache.slnx
 
@@ -1190,7 +1201,10 @@ jobs:
 
       # Template tests pack and install, so they must not use --no-build:
       # they exercise the packaged artifacts, not this build's output.
+      # Do not size a timeout from a warm local run. The first CI run after a
+      # dependency change is cold and the template tests take many minutes.
       - name: Test
+        timeout-minutes: 30
         run: dotnet test DrMoustache.slnx -c Release --no-build
 
       - name: Pack
