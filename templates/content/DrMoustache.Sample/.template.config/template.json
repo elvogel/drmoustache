@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Endpoint Systems",
+  "classifications": [ "Console", "Markdown", "Reporting", "Sample" ],
+  "identity": "DrMoustache.Sample",
+  "name": "DrMoustache report (worked example)",
+  "description": "A worked DrMoustache example reading from SQLite, showing fan-out, collation, escaping and helpers.",
+  "shortName": "drmoustache-sample",
+  "sourceName": "DrMoustache.Sample",
+  "defaultName": "WeatherReport",
+  "tags": { "language": "C#", "type": "project" },
+  "preferNameDirectory": true
+}
