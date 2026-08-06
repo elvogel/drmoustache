@@ -19,10 +19,17 @@
     <RepositoryUrl>https://github.com/elvogel/drmoustache</RepositoryUrl>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
+    <PackageTags>markdown;mustache;templating;reporting;codegen</PackageTags>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DebugType>embedded</DebugType>
     <DebugSymbols>true</DebugSymbols>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)PACKAGE.md" Pack="true" PackagePath="" />
+  </ItemGroup>
 </Project>
