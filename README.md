@@ -68,7 +68,7 @@ rendered output from that template, against the sample's seeded data:
 |---------|-------------|----------|------|
 | alpha | 12.5 | 2026-08-05 09:00 | — |
 | beta | -3.25 | 2026-08-05 09:05 | sensor drift \| readings \*suspect\* |
-| beta | -3.0 | 2026-08-05 09:10 | — |
+| beta | -3 | 2026-08-05 09:10 | — |
 ```
 
 The `beta` note in the source data is the literal string
