@@ -72,6 +72,54 @@ design is preserved in
 becomes worth building when a provider is written once and consumed by many
 rather than written alongside the templates that use it.
 
+## v1 hosting — residuals from the final review
+
+Found by the final whole-branch review's fix wave and parked with rulings rather
+than fixed, because the review process allows one consolidated fix wave and these
+arrived after it. Each was reproduced.
+
+### `--check` does not validate the `output:` expression
+
+`DocumentRenderer.Validate` lexes the template body but not `config.Output`; that lex
+happens only in `RenderAsync`. So a template with a malformed output pattern — say an
+unclosed section in `output: "s/{{#name}}.md"` — passes `--check` and then fails the
+render.
+
+**Ruling:** real, and the same defect class as the Critical the wave just fixed for
+the body lex. It is roughly one line away from the changed code. Parked only because
+the wave's scope was already set; **fix this first** next time this file is touched.
+
+### A frontmatter error still throws out of `CheckAsync`
+
+`TemplateFile.Discover` wraps a malformed frontmatter block with its file path but
+propagates rather than returning it, and `CheckAsync` calls discovery outside any
+guard. One malformed file therefore aborts checking every other template, and
+`CheckResult` — whose entire contract is reporting problems — cannot carry it.
+
+**Ruling:** the user-visible symptom is mitigated: the scaffolds now catch and print
+a clean one-line message rather than a stack trace. The structural gap remains —
+`check` still cannot report a frontmatter fault *alongside* other problems.
+
+### Cross-template output-path collisions are undetected
+
+`onCollision` is enforced within a single template's `DeliveryResult`. Two different
+templates writing the same output path silently last-writer-wins.
+
+**Ruling:** pre-existing, not introduced by the source-grouping fix. That fix did
+change *which* template wins when it happens, from discovery order to
+source-group-then-discovery order — still fully deterministic, but worth a release
+note. Detecting it properly means an assertion across the whole run's documents.
+
+### The sample's rendered temperature is unguarded
+
+`README.md` presents a block as "real rendered output" and nothing pins the rendered
+temperature, so a driver or formatting change would silently falsify it — the same
+doc/code drift class the version-drift guard exists to prevent.
+
+**Ruling:** a one-line addition to `SampleTemplateTests.TheCollatedTableSurvivesHostileData`,
+which already renders this exact table. Declining a second 15-minute machine-global
+template run to add it was the right trade; do it next time that suite is touched.
+
 ## Deferred minor findings
 
 Each was raised by a task review, judged Minor, and traced or verified harmless.
