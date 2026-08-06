@@ -16,6 +16,8 @@ public static class ServiceCollectionExtensions
         if (configure is null) services.AddOptions<DrMoustacheOptions>();
         else services.AddOptions<DrMoustacheOptions>().Configure(configure);
 
+        services.AddSingleton<Rendering.IDocumentRenderer, Rendering.DocumentRenderer>();
+
         return new DrMoustacheBuilder(services);
     }
 
