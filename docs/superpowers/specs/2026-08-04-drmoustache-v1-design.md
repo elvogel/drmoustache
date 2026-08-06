@@ -309,7 +309,7 @@ on first run, seeds it, and renders it.
 ```
 WeatherReport/
   Program.cs                   DI wiring plus first-run seeding
-  ObservationRecord.cs         nested object, nullable field, collection
+  ObservationRecord.cs         four fields, one nullable
   SqliteObservationProvider.cs constructor-injected IOptions and ILogger
   SqliteOptions.cs             bound from appsettings.json
   templates/
@@ -323,7 +323,7 @@ The sample demonstrates what is easy to get wrong, not what is easy:
 
 | Shown | Why |
 |---|---|
-| `{{#items}}\| {{name}} \| {{qty}} \|` fan-out | The table-row case the escaping engine exists for |
+| `{{#records}}\| {{station}} \| {{temperature}} \|` in a table | The table-row case the escaping engine exists for |
 | A value containing `\|` and `*` | Proves data cannot reshape the table — visible in the output |
 | `{{date recordedAt "yyyy-MM-dd"}}` | The helper set, and why `format` rejects temporal values |
 | `{{#note}}…{{/note}}` on a nullable | Section-as-presence, not as `if` |
