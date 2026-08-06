@@ -149,6 +149,49 @@ public class RegistrationTests
             .WithMessage("*stations*already*");
     }
 
+    [Fact]
+    public void RegisteringTheSameNameFromASecondBuilderIsRejected()
+    {
+        // The uniqueness rule belongs to the service collection, not to one
+        // call chain. A builder-local guard missed this, and the loser became
+        // silently unreachable while the "available sources" diagnostic listed
+        // the name twice.
+        var services = new ServiceCollection();
+
+        services.AddDrMoustache().AddSource<StationProvider>("dup");
+
+        var act = () => services.AddDrMoustache().AddSource<OtherProvider>("dup");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*dup*already*");
+    }
+
+    [Fact]
+    public void TwoBuildersWithDifferentNamesDoNotConflict()
+    {
+        var services = new ServiceCollection();
+
+        services.AddDrMoustache().AddSource<StationProvider>("stations");
+        services.AddDrMoustache().AddSource<OtherProvider>("other");
+
+        using var sp = services.BuildServiceProvider();
+
+        sp.GetRequiredKeyedService<IDataProvider>("stations").Should().BeOfType<StationProvider>();
+        sp.GetRequiredKeyedService<IDataProvider>("other").Should().BeOfType<OtherProvider>();
+    }
+
+    [Fact]
+    public void TheRendererIsRegisteredOnceHoweverOftenAddDrMoustacheIsCalled()
+    {
+        var services = new ServiceCollection();
+
+        services.AddDrMoustache();
+        services.AddDrMoustache();
+
+        services.Count(d => d.ServiceType == typeof(DrMoustache.Rendering.IDocumentRenderer))
+            .Should().Be(1);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]

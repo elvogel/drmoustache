@@ -78,12 +78,18 @@ public class MinimalTemplateTests(TemplateFixture fixture)
 
         declared.Should().NotBeNullOrWhiteSpace("Directory.Build.props must set <Version>");
 
-        var scaffold = File.ReadAllText(Path.Combine(
-            root, "templates", "content", "DrMoustache.Minimal",
-            "DrMoustache.Minimal.csproj"));
+        // Every scaffold, not just this one: a bump that misses one leaves CI
+        // green while that template is broken for everyone but its author.
+        string[] scaffolds = ["DrMoustache.Minimal", "DrMoustache.Sample"];
 
-        scaffold.Should().Contain($"Include=\"DrMoustache\" Version=\"{declared}\"",
-            "the scaffold must reference the version this repository packs");
+        foreach (var scaffold in scaffolds)
+        {
+            var csproj = File.ReadAllText(Path.Combine(
+                root, "templates", "content", scaffold, $"{scaffold}.csproj"));
+
+            csproj.Should().Contain($"Include=\"DrMoustache\" Version=\"{declared}\"",
+                "{0} must reference the version this repository packs", scaffold);
+        }
     }
 
     [Fact]

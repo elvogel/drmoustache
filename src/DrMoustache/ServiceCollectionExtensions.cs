@@ -2,6 +2,7 @@ namespace DrMoustache;
 
 using DrMoustache.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>Adds DrMoustache to a service collection.</summary>
 public static class ServiceCollectionExtensions
@@ -16,15 +17,16 @@ public static class ServiceCollectionExtensions
         if (configure is null) services.AddOptions<DrMoustacheOptions>();
         else services.AddOptions<DrMoustacheOptions>().Configure(configure);
 
-        services.AddSingleton<Rendering.IDocumentRenderer, Rendering.DocumentRenderer>();
+        // Try, not Add: calling AddDrMoustache twice — which is exactly how a
+        // duplicate source name gets past a builder-local guard — otherwise
+        // leaves two renderer registrations behind.
+        services.TryAddSingleton<Rendering.IDocumentRenderer, Rendering.DocumentRenderer>();
 
         return new DrMoustacheBuilder(services);
     }
 
     private sealed class DrMoustacheBuilder(IServiceCollection services) : IDrMoustacheBuilder
     {
-        private readonly HashSet<string> _names = new(StringComparer.Ordinal);
-
         public IServiceCollection Services { get; } = services;
 
         public IDrMoustacheBuilder AddSource<TProvider>(string name)
@@ -32,7 +34,12 @@ public static class ServiceCollectionExtensions
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-            if (!_names.Add(name))
+            // The service collection, not this builder, is the scope the
+            // uniqueness rule lives in. A builder-local set misses a second
+            // AddDrMoustache call on the same collection, and there the loser
+            // becomes silently unreachable while the "available sources"
+            // diagnostic lists the name twice.
+            if (IsAlreadyRegistered(name))
             {
                 throw new InvalidOperationException(
                     $"a source named '{name}' is already registered. "
@@ -45,5 +52,10 @@ public static class ServiceCollectionExtensions
 
             return this;
         }
+
+        private bool IsAlreadyRegistered(string name)
+            => Services.Any(d => d.ServiceType == typeof(SourceRegistration)
+                && d.ImplementationInstance is SourceRegistration registration
+                && string.Equals(registration.Name, name, StringComparison.Ordinal));
     }
 }

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <Description>Plugin contract for DrMoustache data providers.</Description>
+    <Description>The provider contract for DrMoustache: implement IDataProvider to supply the records a template renders against.</Description>
   </PropertyGroup>
 </Project>

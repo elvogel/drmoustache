@@ -43,7 +43,10 @@ public sealed class SqliteObservationProvider(
             yield return new ObservationRecord
             {
                 Station = reader.GetString(0),
-                Temperature = reader.GetDecimal(1),
+                // SQLite has no decimal type; the column is REAL, so GetDecimal
+                // would ask the provider to convert from a double it already
+                // holds. Doing it explicitly keeps the lossy step visible.
+                Temperature = (decimal)reader.GetDouble(1),
                 RecordedAt = DateTimeOffset.Parse(
                     reader.GetString(2), CultureInfo.InvariantCulture),
                 Note = reader.IsDBNull(3) ? null : reader.GetString(3),

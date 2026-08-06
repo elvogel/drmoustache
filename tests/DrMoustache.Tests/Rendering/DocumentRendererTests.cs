@@ -61,6 +61,59 @@ public sealed class DocumentRendererTests : IDisposable
         }
     }
 
+    /// <summary>Dies before yielding anything, as an unreachable database would.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated via dependency injection.")]
+    private sealed class DeadProvider : DataProvider<Station>
+    {
+        public override string Name => "stations";
+
+        public override async IAsyncEnumerable<Station> ReadAsync(
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            throw new InvalidOperationException("could not connect");
+#pragma warning disable CS0162 // Unreachable: an iterator needs a yield to be one.
+            yield break;
+#pragma warning restore CS0162
+        }
+    }
+
+    /// <summary>Produces one good record, one unusable one, then dies — so a
+    /// single run carries both a skip and a fault.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated via dependency injection.")]
+    private sealed class FaultAndSkipProvider : DataProvider<Station>
+    {
+        public override string Name => "stations";
+
+        public override async IAsyncEnumerable<Station> ReadAsync(
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            yield return new Station { Name = "alpha", Reading = 1 };
+            yield return new Station { Name = null!, Reading = 2 };
+            throw new InvalidOperationException("the pipe burst");
+        }
+    }
+
+    /// <summary>Counts how many times it was enumerated, to prove a source two
+    /// templates share is drained exactly once.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated via dependency injection.")]
+    private sealed class CountingProvider : DataProvider<Station>
+    {
+        internal int Reads { get; private set; }
+
+        public override string Name => "stations";
+
+        public override async IAsyncEnumerable<Station> ReadAsync(
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            Reads++;
+            yield return new Station { Name = "alpha", Reading = 1 };
+            yield return new Station { Name = null!, Reading = 2 };
+        }
+    }
+
     private const string Fanout = """
         ---
         drmoustache:
@@ -172,10 +225,66 @@ public sealed class DocumentRendererTests : IDisposable
             .RenderAsync(TestContext.Current.CancellationToken);
 
         result.DocumentsWritten.Should().Be(1);
-        result.Skips.Should().ContainSingle()
-            .Which.Reason.Should().Contain("the well ran dry");
-        result.Skips[0].Source.Should().Be("stations");
+
+        // A dead read is a Fault, not a RecordSkip: how many records were
+        // never seen is unknown, so Strict has no say in whether it is fatal.
+        result.Skips.Should().BeEmpty();
+        result.Faults.Should().ContainSingle()
+            .Which.Should().Contain("stations")
+            .And.Contain("the well ran dry")
+            .And.Contain("InvalidOperationException");
+
         File.Exists(Path.Combine(_output, "stations", "good.md")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AProviderFaultFailsTheRunEvenWhenLenient()
+    {
+        // A scheduled job whose database was unreachable must not exit 0
+        // having produced nothing. Strict governs skips; it does not govern
+        // this.
+        Write("a.md", Fanout);
+
+        var result = await Renderer<DeadProvider>(strict: false)
+            .RenderAsync(TestContext.Current.CancellationToken);
+
+        result.DocumentsWritten.Should().Be(0);
+        result.Faults.Should().ContainSingle();
+        result.Success.Should().BeFalse(result.Summary);
+    }
+
+    [Fact]
+    public async Task ARecordSkipAloneStillSucceedsWhenLenient()
+    {
+        // The counterpart to the test above: Strict still means what it meant.
+        StationProvider.Rows =
+            [new() { Name = "alpha", Reading = 1 }, new() { Name = null!, Reading = 2 }];
+        Write("a.md", Fanout);
+
+        var result = await Renderer<StationProvider>(strict: false)
+            .RenderAsync(TestContext.Current.CancellationToken);
+
+        result.Skips.Should().ContainSingle();
+        result.Faults.Should().BeEmpty();
+        result.Success.Should().BeTrue(result.Summary);
+    }
+
+    [Fact]
+    public async Task SummaryDistinguishesAFaultFromASkip()
+    {
+        Write("a.md", Fanout);
+
+        var result = await Renderer<FaultAndSkipProvider>()
+            .RenderAsync(TestContext.Current.CancellationToken);
+
+        result.Skips.Should().ContainSingle();
+        result.Faults.Should().ContainSingle();
+
+        var summary = result.Summary;
+
+        summary.Should().Contain("1 skipped").And.Contain("1 fault");
+        summary.Should().Contain("FAULT").And.Contain("the pipe burst");
+        summary.Should().Contain("skipped  stations record 1");
     }
 
     [Fact]
@@ -294,15 +403,17 @@ public sealed class DocumentRendererTests : IDisposable
     [Fact]
     public async Task RenderResultSummaryReportsDocumentsAndSkips()
     {
+        StationProvider.Rows =
+            [new() { Name = "alpha", Reading = 1 }, new() { Name = null!, Reading = 2 }];
         Write("a.md", Fanout);
 
-        var result = await Renderer<ThrowingProvider>()
+        var result = await Renderer<StationProvider>()
             .RenderAsync(TestContext.Current.CancellationToken);
 
         result.Summary.Should().Contain("1 document")
             .And.Contain("1 skipped")
             .And.Contain("stations")
-            .And.Contain("the well ran dry");
+            .And.Contain("required");
     }
 
     [Fact]
@@ -340,5 +451,96 @@ public sealed class DocumentRendererTests : IDisposable
         result.Summary.Should().Contain("1 problem")
             .And.Contain("readign")
             .And.Contain("a.md");
+    }
+
+    [Fact]
+    public async Task CheckReportsAnUnclosedSectionAgainstItsFile()
+    {
+        // The commonest authoring mistake there is, and --check is the
+        // advertised way to catch it. Before, the body lex threw out of
+        // CheckAsync carrying no path, so a directory of templates had to be
+        // bisected by hand.
+        Write("broken.md", """
+            ---
+            drmoustache:
+              source: stations
+              delivery: collate
+              output: all.md
+            ---
+            {{#records}}- {{name}}
+            """);
+
+        var result = await Renderer<StationProvider>()
+            .CheckAsync(TestContext.Current.CancellationToken);
+
+        result.Success.Should().BeFalse();
+        result.Problems.Should().ContainSingle()
+            .Which.Should().Contain("broken.md").And.Contain("not closed");
+    }
+
+    [Fact]
+    public async Task CheckReportsAnUnregisteredSourceRatherThanThrowing()
+    {
+        // Reporting problems is CheckResult's entire contract, and a
+        // misconfigured 'source:' is the definitive check-time problem.
+        Write("a.md", Fanout.Replace("source: stations", "source: nowhere",
+            StringComparison.Ordinal));
+
+        var result = await Renderer<StationProvider>()
+            .CheckAsync(TestContext.Current.CancellationToken);
+
+        result.Success.Should().BeFalse();
+        result.Problems.Should().ContainSingle()
+            .Which.Should().Contain("a.md")
+            .And.Contain("nowhere")
+            .And.Contain("stations");
+    }
+
+    [Fact]
+    public async Task TwoTemplatesSharingASourceReadItOnce()
+    {
+        // Draining per template read a shared source twice: double the network
+        // or database cost, skips counted twice, and — for a provider whose
+        // sequence is not stable across calls — two templates rendered from
+        // different data. The shipped sample has exactly this shape.
+        Write("a.md", Fanout);
+        Write("all.md", """
+            ---
+            drmoustache:
+              source: stations
+              delivery: collate
+              output: all.md
+            ---
+            # {{count}} stations
+
+            {{#records}}- {{name}}
+            {{/records}}
+            """);
+
+        var services = new ServiceCollection();
+
+        services.AddDrMoustache(o =>
+        {
+            o.TemplateDirectory = _templates;
+            o.OutputDirectory = _output;
+        })
+        .AddSource<CountingProvider>("stations");
+
+        using var provider = services.BuildServiceProvider();
+
+        var result = await provider.GetRequiredService<IDocumentRenderer>()
+            .RenderAsync(TestContext.Current.CancellationToken);
+
+        var counting = (CountingProvider)provider
+            .GetRequiredKeyedService<IDataProvider>("stations");
+
+        counting.Reads.Should().Be(1, "a source two templates share is drained once");
+
+        // Both templates still rendered from that one read.
+        result.DocumentsWritten.Should().Be(2);
+
+        // And the one unusable record is reported once, not once per template.
+        result.Skips.Should().ContainSingle()
+            .Which.Reason.Should().Contain("required");
     }
 }

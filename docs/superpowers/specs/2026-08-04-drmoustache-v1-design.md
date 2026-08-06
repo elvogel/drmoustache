@@ -206,6 +206,7 @@ public sealed record RenderResult(
     int DocumentsWritten,
     IReadOnlyList<string> Warnings,
     IReadOnlyList<RecordSkip> Skips,
+    IReadOnlyList<string> Faults,
     bool Success)
 {
     public string Summary { get; }
@@ -230,6 +231,13 @@ public sealed record RecordSkip(string Source, int Ordinal, string Reason);
 depends on `Strict`. A caller who must remember to compare `Skips.Count` against an
 option set elsewhere will eventually forget.
 
+A **skip** and a **fault** are different events. A skip is one record that could not
+be used; the read continued, so what was lost is known exactly, and `Strict` decides
+whether that is fatal. A fault is a read that died — the database went away, the
+credentials expired — and how many records were never seen is unknown. `Success` is
+therefore false whenever `Faults` is non-empty, whatever `Strict` says: a scheduled
+job whose provider could not connect must not go green having produced nothing.
+
 `RenderAsync` runs the same validation `CheckAsync` does, before touching any
 provider. Template faults are static and affect every record, so they must fail
 before any data is read.
@@ -238,6 +246,9 @@ before any data is read.
 
 ```csharp
 using DrMoustache;
+using DrMoustache.Discovery;
+using DrMoustache.Output;
+using DrMoustache.Rendering;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -249,13 +260,31 @@ builder.Services
 
 using var host = builder.Build();
 
-var result = await host.Services
-    .GetRequiredService<IDocumentRenderer>()
-    .RenderAsync();
+var renderer = host.Services.GetRequiredService<IDocumentRenderer>();
 
-Console.WriteLine(result.Summary);
-return result.Success ? 0 : 1;
+try
+{
+    if (args.Contains("--check"))
+    {
+        var check = await renderer.CheckAsync();
+        Console.Write(check.Summary);
+        return check.Success ? 0 : 1;
+    }
+
+    var result = await renderer.RenderAsync();
+    Console.Write(result.Summary);
+    return result.Success ? 0 : 1;
+}
+catch (Exception ex) when (ex is RenderException or OutputException)
+{
+    Console.Error.WriteLine(ex.Message);
+    return 1;
+}
 ```
+
+A broken template or an unwritable output directory is the user's problem to fix,
+not a bug to report, so it gets a message rather than a stack trace. Only those two
+types are caught: anything else really is a bug, and the trace is what helps.
 
 `Host.CreateApplicationBuilder` is what makes `appsettings.json`, environment
 variables, user-secrets, and command-line arguments work with no code — the exact

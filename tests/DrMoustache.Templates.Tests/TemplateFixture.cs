@@ -107,11 +107,20 @@ public sealed class TemplateFixture : IDisposable
         using var process = Process.Start(info)
             ?? throw new InvalidOperationException($"could not start {file}");
 
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
+        // Both pipes must be drained concurrently. Reading stdout to the end
+        // first deadlocks as soon as the child fills the ~64KB stderr buffer
+        // while we are still blocked on stdout — and the children here are
+        // dotnet pack/build/run over deliberately failing scaffolds, which is
+        // precisely when the output is largest. It would present as CI hanging
+        // until the job timeout with nothing to show for it.
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+
+        var streams = Task.WhenAll(stdout, stderr).GetAwaiter().GetResult();
+
         process.WaitForExit();
 
-        return (process.ExitCode, stdout + stderr);
+        return (process.ExitCode, streams[0] + streams[1]);
     }
 
     private static void Run(string file, string[] arguments, string workingDirectory)
