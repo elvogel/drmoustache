@@ -659,7 +659,7 @@ dotnet run
 cat dist/summary.md
 ```
 
-Expected: `rendered 3 documents` plus a collision warning for `beta`; `dist/summary.md` contains a three-row table; the `beta` note renders with a literal `|` and literal asterisks rather than splitting the row or italicising.
+Expected: `rendered 4 documents` plus a collision warning for `beta`; `dist/summary.md` contains a three-row table; the `beta` note renders with a literal `|` and literal asterisks rather than splitting the row or italicising.
 
 Then: `dotnet new uninstall DrMoustache.Templates`
 
@@ -943,7 +943,7 @@ public class SampleTemplateTests(TemplateFixture fixture) : IClassFixture<Templa
         var (exitCode, output) = TemplateFixture.TryRun("dotnet", ["run"], project);
 
         exitCode.Should().Be(0, output);
-        output.Should().Contain("rendered 3 documents");
+        output.Should().Contain("rendered 4 documents");
     }
 
     [Fact]
