@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <RootNamespace>DrMoustache</RootNamespace>
+    <Description>Renders Markdown templates against data from your own providers. Values are escaped by their position in the document, so data cannot reshape the page.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <ProjectReference Include="../DrMoustache.Abstractions/DrMoustache.Abstractions.csproj" />
+    <ProjectReference Include="../DrMoustache.Core/DrMoustache.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="DrMoustache.Tests" />
+  </ItemGroup>
+</Project>
