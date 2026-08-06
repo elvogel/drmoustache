@@ -68,6 +68,25 @@ public sealed class DocumentWriterTests : IDisposable
     }
 
     [Fact]
+    public async Task CleansUpTheTemporaryFileWhenTheMoveFails()
+    {
+        // A directory where the document wants to be: File.Move cannot
+        // overwrite it, so the move throws and the finally block must
+        // still remove the temporary file.
+        Directory.CreateDirectory(Path.Combine(_root, "a.md"));
+
+#pragma warning disable CA2007 // Lambda in test context; xUnit1030 forbids ConfigureAwait(false) in test methods
+        var act = async () => await Writer().WriteAllAsync(
+            [new RenderedDocument("a.md", "x")], TestContext.Current.CancellationToken);
+#pragma warning restore CA2007
+
+        await act.Should().ThrowAsync<OutputException>();
+
+        Directory.EnumerateFiles(_root, "*.drm-tmp", SearchOption.AllDirectories)
+            .Should().BeEmpty("the temporary file must not survive a failed move");
+    }
+
+    [Fact]
     public async Task WritesUtf8WithoutAByteOrderMark()
     {
         await Writer().WriteAllAsync(
@@ -76,7 +95,9 @@ public sealed class DocumentWriterTests : IDisposable
         var bytes = await File.ReadAllBytesAsync(
             Path.Combine(_root, "a.md"), TestContext.Current.CancellationToken);
 
-        // Verify the file doesn't start with UTF-8 BOM
+        // Verify the file doesn't start with UTF-8 BOM.
+        // FluentAssertions 6.12.2 (pinned for MIT license) lacks NotStartWith for byte collections;
+        // this is semantically equivalent and handles short-content edge cases correctly.
         var bom = new byte[] { 0xEF, 0xBB, 0xBF };
         bytes.Take(Math.Min(3, bytes.Length)).SequenceEqual(bom).Should().BeFalse();
     }
