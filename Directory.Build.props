@@ -10,6 +10,7 @@
     <AnalysisLevel>latest-all</AnalysisLevel>
   </PropertyGroup>
   <PropertyGroup>
+    <Version>0.1.0</Version>
     <Authors>Endpoint Systems</Authors>
     <Company>Endpoint Systems</Company>
     <Product>DrMoustache</Product>

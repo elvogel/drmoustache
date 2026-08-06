@@ -7,7 +7,9 @@
     <RootNamespace>DrMoustache.Minimal</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="DrMoustache" Version="1.0.0" />
+    <!-- Must match Directory.Build.props's <Version>; a test in the DrMoustache
+         solution asserts this, so drift here fails CI rather than a stranger's restore. -->
+    <PackageReference Include="DrMoustache" Version="0.1.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
   </ItemGroup>
   <ItemGroup>
