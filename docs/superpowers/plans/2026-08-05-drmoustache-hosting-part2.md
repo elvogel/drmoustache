@@ -1006,6 +1006,35 @@ public class SampleTemplateTests(TemplateFixture fixture) : IClassFixture<Templa
 }
 ```
 
+Add one more test to `MinimalTemplateTests`, guarding the defect Task 8 uncovered:
+
+```csharp
+    [Fact]
+    public void ReferencesTheVersionThisRepositoryActuallyPacks()
+    {
+        // The scaffold names its DrMoustache version literally, and nothing
+        // forces it to agree with Directory.Build.props. When they drift, a
+        // fresh restore fails for strangers while still working for anyone
+        // with the old version cached -- silent and environment-dependent.
+        var root = TemplateFixture.RepositoryRoot;
+
+        var declared = System.Text.RegularExpressions.Regex.Match(
+            File.ReadAllText(Path.Combine(root, "Directory.Build.props")),
+            @"<Version>([^<]+)</Version>").Groups[1].Value;
+
+        declared.Should().NotBeNullOrWhiteSpace("Directory.Build.props must set <Version>");
+
+        var scaffold = File.ReadAllText(Path.Combine(
+            root, "templates", "content", "DrMoustache.Minimal",
+            "DrMoustache.Minimal.csproj"));
+
+        scaffold.Should().Contain($"""Include="DrMoustache" Version="{declared}"""",
+            "the scaffold must reference the version this repository packs");
+    }
+```
+
+This needs `TemplateFixture.RepositoryRoot` to be exposed — change the fixture's private `FindRepositoryRoot()` into a `public static string RepositoryRoot { get; }` initialised once, and use it from both places.
+
 `TheCollatedTableSurvivesHostileData` is the end-to-end proof of the project's whole premise: real data containing a pipe, rendered through the real pipeline into a real file, and the table is still a table.
 
 - [ ] **Step 5: Run the tests**
@@ -1073,10 +1102,9 @@ Short, NuGet-facing: what the package is, the minimal `Program.cs`, a pointer to
 
 - [ ] **Step 3: Add metadata to `Directory.Build.props`**
 
-Add to the second `<PropertyGroup>`:
+Add to the second `<PropertyGroup>`. Note `<Version>0.1.0</Version>` is **already present** — Task 8's fix round moved it forward so the scaffold could reference a real version. Do not add it twice:
 
 ```xml
-    <Version>0.1.0</Version>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageTags>markdown;mustache;templating;reporting;codegen</PackageTags>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
