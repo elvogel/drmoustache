@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Endpoint Systems",
+  "classifications": [ "Console", "Markdown", "Reporting" ],
+  "identity": "DrMoustache.Minimal",
+  "name": "DrMoustache report",
+  "description": "A console project that renders Markdown from a data provider you write.",
+  "shortName": "drmoustache",
+  "sourceName": "DrMoustache.Minimal",
+  "defaultName": "MyReport",
+  "tags": { "language": "C#", "type": "project" },
+  "preferNameDirectory": true
+}

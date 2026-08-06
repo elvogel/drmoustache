@@ -8,4 +8,7 @@
     <Project Path="tests/DrMoustache.Core.Tests/DrMoustache.Core.Tests.csproj" />
     <Project Path="tests/DrMoustache.Tests/DrMoustache.Tests.csproj" />
   </Folder>
+  <Folder Name="/templates/">
+    <Project Path="templates/DrMoustache.Templates.csproj" />
+  </Folder>
 </Solution>
