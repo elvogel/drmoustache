@@ -3,7 +3,8 @@ namespace DrMoustache.Templates.Tests;
 using FluentAssertions;
 using Xunit;
 
-public class SampleTemplateTests(TemplateFixture fixture) : IClassFixture<TemplateFixture>
+[Collection(TemplateCollectionDefinition.Name)]
+public class SampleTemplateTests(TemplateFixture fixture)
 {
     [Fact]
     public void BuildsAndRuns()
@@ -12,7 +13,7 @@ public class SampleTemplateTests(TemplateFixture fixture) : IClassFixture<Templa
 
         var (exitCode, output) = TemplateFixture.TryRun("dotnet", ["run"], project);
 
-        exitCode.Should().Be(0, output);
+        exitCode.Should().Be(0, TemplateFixture.Diagnostic(output));
         output.Should().Contain("rendered 4 documents");
     }
 
@@ -22,7 +23,7 @@ public class SampleTemplateTests(TemplateFixture fixture) : IClassFixture<Templa
         var project = fixture.Instantiate("drmoustache-sample", "SampleFanout");
 
         var (exitCode, output) = TemplateFixture.TryRun("dotnet", ["run"], project);
-        exitCode.Should().Be(0, output);
+        exitCode.Should().Be(0, TemplateFixture.Diagnostic(output));
 
         output.Should().Contain("collision",
             "two beta rows share a station name, and a resolved collision must warn");
@@ -39,7 +40,7 @@ public class SampleTemplateTests(TemplateFixture fixture) : IClassFixture<Templa
         var project = fixture.Instantiate("drmoustache-sample", "SampleTable");
 
         var (exitCode, output) = TemplateFixture.TryRun("dotnet", ["run"], project);
-        exitCode.Should().Be(0, output);
+        exitCode.Should().Be(0, TemplateFixture.Diagnostic(output));
 
         var summary = File.ReadAllText(Path.Combine(project, "dist", "summary.md"));
 
@@ -70,7 +71,7 @@ public class SampleTemplateTests(TemplateFixture fixture) : IClassFixture<Templa
 
         // summary.md is a collate template. If the renderer validated it as
         // fanout it would report 'count' and 'records' as unknown fields.
-        exitCode.Should().Be(0, output);
+        exitCode.Should().Be(0, TemplateFixture.Diagnostic(output));
         output.Should().Contain("checked 2 templates");
     }
 }

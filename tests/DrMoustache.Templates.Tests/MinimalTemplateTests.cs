@@ -3,7 +3,8 @@ namespace DrMoustache.Templates.Tests;
 using FluentAssertions;
 using Xunit;
 
-public class MinimalTemplateTests(TemplateFixture fixture) : IClassFixture<TemplateFixture>
+[Collection(TemplateCollectionDefinition.Name)]
+public class MinimalTemplateTests(TemplateFixture fixture)
 {
     [Fact]
     public void ScaffoldsTheExpectedFiles()
@@ -34,12 +35,13 @@ public class MinimalTemplateTests(TemplateFixture fixture) : IClassFixture<Templ
         var project = fixture.Instantiate("drmoustache", "MinRun");
 
         var (exitCode, output) = TemplateFixture.TryRun("dotnet", ["run"], project);
+        var diagnostic = TemplateFixture.Diagnostic(output);
 
-        exitCode.Should().Be(0, output);
+        exitCode.Should().Be(0, diagnostic);
         output.Should().Contain("rendered 1 document");
 
         var rendered = Path.Combine(project, "dist", "reports", "sample-1.md");
-        File.Exists(rendered).Should().BeTrue(output);
+        File.Exists(rendered).Should().BeTrue(diagnostic);
 
         var text = File.ReadAllText(rendered);
         text.Should().StartWith("---");
@@ -55,8 +57,9 @@ public class MinimalTemplateTests(TemplateFixture fixture) : IClassFixture<Templ
 
         var (exitCode, output) = TemplateFixture.TryRun(
             "dotnet", ["run", "--", "--check"], project);
+        var diagnostic = TemplateFixture.Diagnostic(output);
 
-        exitCode.Should().Be(0, output);
+        exitCode.Should().Be(0, diagnostic);
         output.Should().Contain("no problems found");
     }
 
@@ -81,5 +84,14 @@ public class MinimalTemplateTests(TemplateFixture fixture) : IClassFixture<Templ
 
         scaffold.Should().Contain($"Include=\"DrMoustache\" Version=\"{declared}\"",
             "the scaffold must reference the version this repository packs");
+    }
+
+    [Fact]
+    public void DiagnosticEscapesBracesForFluentAssertionsBecause()
+    {
+        // FluentAssertions treats "because" as a format string; an unescaped
+        // brace in captured process output throws FormatException instead of
+        // reporting the assertion failure. This guards the escaping itself.
+        TemplateFixture.Diagnostic("a {0} b").Should().Be("a {{0}} b");
     }
 }

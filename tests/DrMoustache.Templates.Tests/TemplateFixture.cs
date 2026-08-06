@@ -1,15 +1,22 @@
-// xUnit parallelizes different test classes (collections) by default, but
-// MinimalTemplateTests and SampleTemplateTests each get their own
-// TemplateFixture instance, and both call `dotnet new install`/`uninstall`
-// against the single machine-global template engine store. Left parallel,
-// two fixtures race on that shared store (observed: "File ... already
-// exists" from a concurrent install). Serialize collections in this
-// assembly so only one fixture is ever installing at a time.
-[assembly: Xunit.CollectionBehavior(DisableTestParallelization = true)]
-
 namespace DrMoustache.Templates.Tests;
 
 using System.Diagnostics;
+using Xunit;
+
+/// <summary>Groups <see cref="MinimalTemplateTests"/> and
+/// <see cref="SampleTemplateTests"/> so they share one
+/// <see cref="TemplateFixture"/> instead of each building and installing
+/// their own. Sharing halves the pack/install cost and, because xUnit runs
+/// tests within a single collection sequentially, keeps the two classes'
+/// use of the machine-global template engine store from racing.</summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Design", "CA1515:Consider making public types internal",
+    Justification = "Must be public: xUnit1027 requires collection definition classes public.")]
+[CollectionDefinition(Name)]
+public sealed class TemplateCollectionDefinition : ICollectionFixture<TemplateFixture>
+{
+    public const string Name = "templates";
+}
 
 /// <summary>Packs the solution to a local feed and installs the template
 /// package once for the whole test class.</summary>
@@ -66,6 +73,20 @@ public sealed class TemplateFixture : IDisposable
             """);
 
         return into;
+    }
+
+    /// <summary>Escapes braces so captured process output is safe to pass as a
+    /// FluentAssertions "because" argument.</summary>
+    /// <remarks>FluentAssertions formats "because" as a format string, so an
+    /// unescaped brace in compiler or MSBuild output throws FormatException
+    /// instead of reporting the assertion failure — hiding the very diagnostic
+    /// the caller needs.</remarks>
+    public static string Diagnostic(string output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+
+        return output.Replace("{", "{{", StringComparison.Ordinal)
+                      .Replace("}", "}}", StringComparison.Ordinal);
     }
 
     public static (int ExitCode, string Output) TryRun(
