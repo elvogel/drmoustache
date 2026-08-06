@@ -40,27 +40,35 @@ public static class DeliveryPlanner
 
     private static readonly ISerializer YamlWriter = new SerializerBuilder().Build();
 
+    /// <param name="config">The template's rendering configuration.</param>
+    /// <param name="outputPattern">The lexed 'output' pattern.</param>
+    /// <param name="body">The lexed template body.</param>
+    /// <param name="passthrough">The frontmatter block to render per document.</param>
+    /// <param name="records">The records to plan documents for.</param>
+    /// <param name="culture">Formatting culture. Null means invariant, so
+    /// output is byte-identical across machines.</param>
     public static DeliveryResult Plan(
         RenderConfig config,
         IReadOnlyList<TemplateNode> outputPattern,
         IReadOnlyList<TemplateNode> body,
         string passthrough,
-        IReadOnlyList<object> records)
+        IReadOnlyList<object> records,
+        CultureInfo? culture = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(records);
 
         return config.Delivery == DeliveryMode.Collate
-            ? Collate(config, body, passthrough, records)
-            : Fanout(config, outputPattern, body, passthrough, records);
+            ? Collate(config, body, passthrough, records, culture)
+            : Fanout(config, outputPattern, body, passthrough, records, culture);
     }
 
     private static DeliveryResult Collate(
         RenderConfig config, IReadOnlyList<TemplateNode> body,
-        string passthrough, IReadOnlyList<object> records)
+        string passthrough, IReadOnlyList<object> records, CultureInfo? culture)
     {
         var root = new CollateScope(records.Count, records);
-        var content = Compose(body, passthrough, root);
+        var content = Compose(body, passthrough, root, culture);
 
         return new DeliveryResult([new RenderedDocument(config.Output, content)], []);
     }
@@ -70,7 +78,8 @@ public static class DeliveryPlanner
         IReadOnlyList<TemplateNode> outputPattern,
         IReadOnlyList<TemplateNode> body,
         string passthrough,
-        IReadOnlyList<object> records)
+        IReadOnlyList<object> records,
+        CultureInfo? culture)
     {
         var policy = config.OnCollision
             ?? throw new DeliveryException(
@@ -92,7 +101,7 @@ public static class DeliveryPlanner
                 order.Add(path);
             }
 
-            bucket.Add((record, Compose(body, passthrough, record)));
+            bucket.Add((record, Compose(body, passthrough, record, culture)));
         }
 
         var documents = new List<RenderedDocument>();
@@ -208,13 +217,14 @@ public static class DeliveryPlanner
     }
 
     private static string Compose(
-        IReadOnlyList<TemplateNode> body, string passthrough, object? scope)
+        IReadOnlyList<TemplateNode> body, string passthrough, object? scope,
+        CultureInfo? culture)
     {
-        var content = TemplateRenderer.Render(body, scope);
+        var content = TemplateRenderer.Render(body, scope, culture);
 
         if (string.IsNullOrWhiteSpace(passthrough)) return content;
 
-        var frontmatter = RenderFrontmatter(passthrough, scope).TrimEnd('\n');
+        var frontmatter = RenderFrontmatter(passthrough, scope, culture).TrimEnd('\n');
 
         return frontmatter.Length == 0 ? content : $"---\n{frontmatter}\n---\n{content}";
     }
@@ -235,7 +245,8 @@ public static class DeliveryPlanner
     /// formatting of the author's structure, not the author's own bytes, so
     /// comments and hand-chosen quoting styles do not survive. That is the
     /// price of guaranteeing the output parses.</summary>
-    private static string RenderFrontmatter(string passthrough, object? scope)
+    private static string RenderFrontmatter(
+        string passthrough, object? scope, CultureInfo? culture)
     {
         GuardUnquotedTag(passthrough);
 
@@ -255,7 +266,7 @@ public static class DeliveryPlanner
 
         try
         {
-            return YamlWriter.Serialize(RenderYamlNode(graph, scope));
+            return YamlWriter.Serialize(RenderYamlNode(graph, scope, culture));
         }
         catch (YamlException ex)
         {
@@ -321,15 +332,17 @@ public static class DeliveryPlanner
     // Matched through the non-generic interfaces on purpose: YamlDotNet hands
     // back Dictionary<object, object> and List<object>, and generic interfaces
     // are invariant, so IDictionary<object, object?> would never match.
-    private static object? RenderYamlNode(object? node, object? scope) => node switch
-    {
-        string text => RenderUnescaped(text, scope),
-        IDictionary map => RenderMap(map, scope),
-        IList list => RenderList(list, scope),
-        _ => node,
-    };
+    private static object? RenderYamlNode(object? node, object? scope, CultureInfo? culture)
+        => node switch
+        {
+            string text => RenderUnescaped(text, scope, culture),
+            IDictionary map => RenderMap(map, scope, culture),
+            IList list => RenderList(list, scope, culture),
+            _ => node,
+        };
 
-    private static Dictionary<object, object?> RenderMap(IDictionary map, object? scope)
+    private static Dictionary<object, object?> RenderMap(
+        IDictionary map, object? scope, CultureInfo? culture)
     {
         var result = new Dictionary<object, object?>();
 
@@ -337,17 +350,18 @@ public static class DeliveryPlanner
         {
             if (entry.Key is IDictionary or IList) throw UnquotedTag(entry.Key);
 
-            result[RenderYamlNode(entry.Key, scope) ?? ""] = RenderYamlNode(entry.Value, scope);
+            result[RenderYamlNode(entry.Key, scope, culture) ?? ""] =
+                RenderYamlNode(entry.Value, scope, culture);
         }
 
         return result;
     }
 
-    private static List<object?> RenderList(IList list, object? scope)
+    private static List<object?> RenderList(IList list, object? scope, CultureInfo? culture)
     {
         var result = new List<object?>(list.Count);
 
-        foreach (var item in list) result.Add(RenderYamlNode(item, scope));
+        foreach (var item in list) result.Add(RenderYamlNode(item, scope, culture));
 
         return result;
     }
@@ -357,9 +371,9 @@ public static class DeliveryPlanner
     /// context that escapes nothing, so rewriting each tag to it is how the
     /// ordinary renderer — scope walking, helpers, sections and all — is reused
     /// without any of its Markdown behaviour.</summary>
-    private static string RenderUnescaped(string text, object? scope)
+    private static string RenderUnescaped(string text, object? scope, CultureInfo? culture)
         => text.Contains("{{", StringComparison.Ordinal)
-            ? TemplateRenderer.Render(WithoutEscaping(TemplateLexer.Lex(text)), scope)
+            ? TemplateRenderer.Render(WithoutEscaping(TemplateLexer.Lex(text)), scope, culture)
             : text;
 
     private static IReadOnlyList<TemplateNode> WithoutEscaping(

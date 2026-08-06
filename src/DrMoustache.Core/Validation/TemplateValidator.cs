@@ -20,10 +20,15 @@ public static class TemplateValidator
     /// 'unknown field' for both — and, because <c>{{#records}}</c> appeared to
     /// fail, never descended into the loop body, so collate templates received
     /// no field checking at all.</param>
+    /// <remarks>Required rather than defaulted: a collate template validated
+    /// as fanout reports 'count' and 'records' as unknown fields and then
+    /// never descends into the loop body, so it fails valid templates while
+    /// passing broken ones (known-issues R5). There is a real caller now, so
+    /// the compiler should ask rather than a default answering wrongly.</remarks>
     public static IReadOnlyList<string> Validate(
         IReadOnlyList<TemplateNode> nodes,
         RecordManifest manifest,
-        DeliveryMode delivery = DeliveryMode.Fanout)
+        DeliveryMode delivery)
     {
         ArgumentNullException.ThrowIfNull(nodes);
         ArgumentNullException.ThrowIfNull(manifest);

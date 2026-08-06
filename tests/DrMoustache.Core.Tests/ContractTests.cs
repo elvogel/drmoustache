@@ -19,7 +19,7 @@ public class ContractTests
         public override string Name => "sample-provider";
 
         public override async IAsyncEnumerable<Sample> ReadAsync(
-            ProviderContext ctx, [EnumeratorCancellation] CancellationToken ct)
+            [EnumeratorCancellation] CancellationToken ct)
         {
             await Task.Yield();
             yield return new Sample { Id = "a" };
@@ -60,18 +60,26 @@ public class ContractTests
     public async Task TypedBaseBridgesToObjectSequence()
     {
         IDataProvider provider = new SampleProvider();
-        using var configMgr = new Microsoft.Extensions.Configuration.ConfigurationManager();
-        var ctx = new ProviderContext
-        {
-            Configuration = configMgr,
-            Source = configMgr.GetSection("sample"),
-            Logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
-        };
 
         var items = new List<object>();
-        await foreach (var item in provider.ReadAsync(ctx, TestContext.Current.CancellationToken))
+        await foreach (var item in provider.ReadAsync(TestContext.Current.CancellationToken))
             items.Add(item);
 
         items.Should().ContainSingle().Which.Should().BeOfType<Sample>();
+    }
+
+    [Fact]
+    public void AbstractionsHasNoPackageDependencies()
+    {
+        var referenced = typeof(IDataProvider).Assembly
+            .GetReferencedAssemblies()
+            .Select(a => a.Name)
+            .Where(n => n is not null
+                && !n.StartsWith("System.", StringComparison.Ordinal)
+                && !string.Equals(n, "netstandard", StringComparison.Ordinal))
+            .ToList();
+
+        referenced.Should().BeEmpty(
+            "the contract package must be referenceable without dragging anything in");
     }
 }

@@ -1,5 +1,6 @@
 namespace DrMoustache.Core.Tests.Delivery;
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using DrMoustache.Abstractions;
 using DrMoustache.Core.Delivery;
@@ -45,6 +46,16 @@ public class DeliveryPlannerTests
     private sealed record Priced(
         [property: Field] string Id,
         [property: Field] decimal Total);
+
+    [DrMoustacheRecord("money")]
+    private sealed record Money
+    {
+        [Field] public required string Id { get; init; }
+        [Field] public required decimal Amount { get; init; }
+
+        [SetsRequiredMembers]
+        public Money(string id, decimal amount) { Id = id; Amount = amount; }
+    }
 #pragma warning restore CA1812
 
     private static DeliveryResult Plan(
@@ -457,6 +468,26 @@ public class DeliveryPlannerTests
     public void NoFrontmatterIsEmittedWhenPassthroughIsEmpty()
         => Plan(Fanout(CollisionPolicy.Error), "body", new Rec("a", "A"))
             .Documents[0].Content.Should().Be("body");
+
+    [Fact]
+    public void CultureFlowsThroughToRenderedContent()
+    {
+        var config = new RenderConfig("s", DeliveryMode.Collate, "all.md", null);
+
+        var invariant = DeliveryPlanner.Plan(
+            config, TemplateLexer.Lex(config.Output),
+            TemplateLexer.Lex("{{#records}}{{amount}}{{/records}}"),
+            passthrough: "", [new Money("x", 1234.5m)]);
+
+        var german = DeliveryPlanner.Plan(
+            config, TemplateLexer.Lex(config.Output),
+            TemplateLexer.Lex("{{#records}}{{amount}}{{/records}}"),
+            passthrough: "", [new Money("x", 1234.5m)],
+            CultureInfo.GetCultureInfo("de-DE"));
+
+        invariant.Documents[0].Content.Should().Be("1234.5");
+        german.Documents[0].Content.Should().Be("1234,5");
+    }
 
     [Fact]
     public void InsertSuffixesTheFilenameNotADotInADirectoryName()

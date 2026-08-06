@@ -29,9 +29,10 @@ public class TemplateValidatorTests
     }
 #pragma warning restore CA1812
 
-    private static IReadOnlyList<string> Validate(string template)
+    private static IReadOnlyList<string> Validate(
+        string template, DeliveryMode delivery = DeliveryMode.Fanout)
         => TemplateValidator.Validate(
-            TemplateLexer.Lex(template), ManifestBuilder.FromType<Thing>());
+            TemplateLexer.Lex(template), ManifestBuilder.FromType<Thing>(), delivery);
 
     [Fact]
     public void AcceptsAValidTemplate()
