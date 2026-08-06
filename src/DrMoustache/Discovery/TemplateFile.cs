@@ -30,7 +30,7 @@ internal sealed record TemplateFile(string Path, ParsedTemplate Parsed)
         {
             var content = File.ReadAllText(path);
 
-            if (!content.Contains(ReservedKey, StringComparison.Ordinal))
+            if (!DeclaresTemplate(content))
                 continue;
 
             try
@@ -44,6 +44,21 @@ internal sealed record TemplateFile(string Path, ParsedTemplate Parsed)
         }
 
         return templates;
+    }
+
+    /// <summary>True when the file declares a reserved block in its frontmatter.</summary>
+    /// <remarks>Only the frontmatter region is searched. Scanning the whole file
+    /// would match a page that merely documents the format in a fenced code
+    /// block — and because such a page has no reserved block, parsing it would
+    /// throw and abort discovery for every template beside it.</remarks>
+    private static bool DeclaresTemplate(string content)
+    {
+        if (!content.StartsWith("---", StringComparison.Ordinal)) return false;
+
+        var end = content.IndexOf("\n---", 3, StringComparison.Ordinal);
+        if (end < 0) return false;
+
+        return content.AsSpan(0, end).Contains(ReservedKey, StringComparison.Ordinal);
     }
 
     private static bool IsUnderPartials(string root, string path)

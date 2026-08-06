@@ -1,13 +1,11 @@
 namespace DrMoustache.Tests.Discovery;
 
-using System.Diagnostics.CodeAnalysis;
 using DrMoustache.Core.Frontmatter;
 using DrMoustache.Discovery;
 using FluentAssertions;
 using Xunit;
 
-[SuppressMessage("Design", "CA1063", Justification = "Test fixture; simplified disposal is appropriate")]
-public class TemplateFileTests : IDisposable
+public sealed class TemplateFileTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("drm-disc-").FullName;
 
@@ -136,4 +134,45 @@ public class TemplateFileTests : IDisposable
     [Fact]
     public void AnEmptyDirectoryYieldsNothingAndDoesNotThrow()
         => TemplateFile.Discover(_dir).Should().BeEmpty();
+
+    [Fact]
+    public void SkipsAPageWithoutFrontmatterThatMentionsTheFormatInACodeBlock()
+    {
+        Write("template.md", Valid);
+        Write("docs.md", """
+            # How to document templates
+
+            Here's the format:
+
+            ```yaml
+            ---
+            drmoustache:
+              source: stations
+              delivery: fanout
+              output: stations/{{name}}.md
+            ---
+            ```
+            """);
+
+        TemplateFile.Discover(_dir).Should().ContainSingle()
+            .Which.Path.Should().EndWith("template.md");
+    }
+
+    [Fact]
+    public void SkipsAPageWithFrontmatterThatMentionsTheFormatInTheBody()
+    {
+        Write("template.md", Valid);
+        Write("readme.md", """
+            ---
+            title: Configuration Reference
+            ---
+
+            ## drmoustache: configuration
+
+            The drmoustache: block is used like this...
+            """);
+
+        TemplateFile.Discover(_dir).Should().ContainSingle()
+            .Which.Path.Should().EndWith("template.md");
+    }
 }
