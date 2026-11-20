@@ -5,6 +5,9 @@
     <Title>DrMoustache project templates</Title>
     <Description>dotnet new templates for DrMoustache: render Markdown from your own data.</Description>
     <PackageTags>dotnet-new;templates;markdown;mustache</PackageTags>
+    <!-- One target: this package ships template files and compiles nothing, so the net11.0
+         that Directory.Build.props adds on SDK 11 would only build it twice. -->
+    <TargetFrameworks></TargetFrameworks>
     <TargetFramework>net10.0</TargetFramework>
     <IncludeContentInPack>true</IncludeContentInPack>
     <IncludeBuildOutput>false</IncludeBuildOutput>
