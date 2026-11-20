@@ -3,6 +3,11 @@
     <IsPackable>false</IsPackable>
     <OutputType>Exe</OutputType>
     <RootNamespace>DrMoustache.Templates.Tests</RootNamespace>
+    <!-- One target. These tests drive `dotnet new install` and build the scaffolds, which
+         does not depend on the runtime the test assembly runs on. Two targets ran two copies
+         at once against the one ~/.templateengine store, and the second install failed with
+         "already exists". -->
+    <TargetFrameworks>net10.0</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
